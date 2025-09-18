@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Legal PDF Processor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .container {
+            max-width: 900px;
+        }
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+        }
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            border: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 25px;
+            padding: 12px 30px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+            border: none;
+            border-radius: 25px;
+            padding: 12px 30px;
+            font-weight: 600;
+        }
+        .btn-info {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            border: none;
+            border-radius: 25px;
+            padding: 8px 20px;
+            font-weight: 600;
+        }
+        .progress {
+            height: 8px;
+            border-radius: 10px;
+            background-color: rgba(0,0,0,0.1);
+        }
+        .progress-bar {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+        }
+        .file-upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .file-upload-area:hover {
+            border-color: #764ba2;
+            background: rgba(102, 126, 234, 0.05);
+        }
+        .file-upload-area.dragover {
+            border-color: #764ba2;
+            background: rgba(102, 126, 234, 0.1);
+        }
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+        .status-idle { background: #e9ecef; color: #6c757d; }
+        .status-processing { background: #fff3cd; color: #856404; }
+        .status-complete { background: #d1ecf1; color: #0c5460; }
+        .status-error { background: #f8d7da; color: #721c24; }
+        .variables-display {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        .variable-item {
+            background: white;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 5px 0;
+            border-left: 4px solid #667eea;
+        }
+        .spinner-border-sm {
+            width: 1rem;
+            height: 1rem;
+        }
+        .alert {
+            border-radius: 10px;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <div class="card">
+                    <div class="card-header text-center py-4">
+                        <h2 class="mb-0">
+                            <i class="fas fa-file-medical-alt me-3"></i>
+                            Medical Legal PDF Processor
+                        </h2>
+                        <p class="mb-0 mt-2 opacity-75">Upload a PDF using OpenAI's File Search with Vector Stores</p>
+                    </div>
+                    <div class="card-body p-4">
+                        <!-- Status Display -->
+                        <div class="mb-4 text-center">
+                            <span id="statusBadge" class="status-badge status-idle">
+                                <i class="fas fa-circle me-2"></i>Ready to Upload
+                            </span>
+                        </div>
+
+                        <!-- Verbosity Control -->
+                        <div class="row mb-4">
+                            <div class="col-md-6 offset-md-3">
+                                <label for="verbosity" class="form-label fw-bold">
+                                    <i class="fas fa-sliders-h me-2"></i>Response Detail Level
+                                </label>
+                                <select class="form-select" id="verbosity">
+                                    <option value="brief">Brief - Concise responses</option>
+                                    <option value="detailed" selected>Detailed - Balanced responses</option>
+                                    <option value="comprehensive">Comprehensive - Extensive responses</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- File Upload Area -->
+                        <div class="file-upload-area mb-4" id="uploadArea">
+                            <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                            <h5>Drag & Drop PDF Here</h5>
+                            <p class="text-muted">or click to browse files</p>
+                            <input type="file" id="pdfFile" accept=".pdf" class="d-none">
+                        </div>
+
+                        <!-- Progress Bar -->
+                        <div class="progress mb-4" id="progressContainer" style="display: none;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" id="progressBar" style="width: 0%"></div>
+                        </div>
+
+                        <!-- Control Buttons -->
+                        <div class="row mb-4">
+                            <div class="col-md-3 mb-2">
+                                <button class="btn btn-primary w-100" id="uploadBtn" disabled>
+                                    <i class="fas fa-upload me-2"></i>Upload PDF
+                                </button>
+                            </div>
+                            <div class="col-md-3 mb-2">
+                                <button class="btn btn-info w-100" id="processBtn" disabled>
+                                    <i class="fas fa-cogs me-2"></i>Process & Preview
+                                </button>
+                            </div>
+                            <div class="col-md-3 mb-2">
+                                <button class="btn btn-success w-100" id="generateBtn" disabled>
+                                    <i class="fas fa-file-pdf me-2"></i>Generate Report
+                                </button>
+                            </div>
+                            <div class="col-md-3 mb-2">
+                                <button class="btn btn-outline-secondary w-100" id="cleanupBtn" disabled>
+                                    <i class="fas fa-trash me-2"></i>Cleanup
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Results Display -->
+                        <div id="resultsContainer" style="display: none;">
+                            <!-- Variables Display -->
+                            <div class="mb-4">
+                                <h5><i class="fas fa-tags me-2"></i>Extracted Variables</h5>
+                                <div id="variablesDisplay" class="variables-display"></div>
+                            </div>
+
+                            <!-- Processing Results -->
+                            <div class="mb-4">
+                                <h5><i class="fas fa-list-alt me-2"></i>Processing Results Preview</h5>
+                                <div id="resultsPreview" class="variables-display"></div>
+                            </div>
+                        </div>
+
+                        <!-- Alerts -->
+                        <div id="alertContainer"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        class PDFProcessor {
+            constructor() {
+                this.initializeElements();
+                this.setupEventListeners();
+                this.currentFile = null;
+            }
+
+            initializeElements() {
+                this.uploadArea = document.getElementById('uploadArea');
+                this.pdfFile = document.getElementById('pdfFile');
+                this.uploadBtn = document.getElementById('uploadBtn');
+                this.processBtn = document.getElementById('processBtn');
+                this.generateBtn = document.getElementById('generateBtn');
+                this.cleanupBtn = document.getElementById('cleanupBtn');
+                this.statusBadge = document.getElementById('statusBadge');
+                this.progressContainer = document.getElementById('progressContainer');
+                this.progressBar = document.getElementById('progressBar');
+                this.alertContainer = document.getElementById('alertContainer');
+                this.resultsContainer = document.getElementById('resultsContainer');
+                this.variablesDisplay = document.getElementById('variablesDisplay');
+                this.resultsPreview = document.getElementById('resultsPreview');
+                this.verbosity = document.getElementById('verbosity');
+            }
+
+            setupEventListeners() {
+                // File upload area
+                this.uploadArea.addEventListener('click', () => this.pdfFile.click());
+                this.uploadArea.addEventListener('dragover', this.handleDragOver.bind(this));
+                this.uploadArea.addEventListener('dragleave', this.handleDragLeave.bind(this));
+                this.uploadArea.addEventListener('drop', this.handleDrop.bind(this));
+
+                // File input
+                this.pdfFile.addEventListener('change', this.handleFileSelect.bind(this));
+
+                // Buttons
+                this.uploadBtn.addEventListener('click', this.uploadPDF.bind(this));
+                this.processBtn.addEventListener('click', this.processPDF.bind(this));
+                this.generateBtn.addEventListener('click', this.generateReport.bind(this));
+                this.cleanupBtn.addEventListener('click', this.cleanup.bind(this));
+
+                // Verbosity change
+                this.verbosity.addEventListener('change', this.updateVerbosity.bind(this));
+            }
+
+            handleDragOver(e) {
+                e.preventDefault();
+                this.uploadArea.classList.add('dragover');
+            }
+
+            handleDragLeave(e) {
+                e.preventDefault();
+                this.uploadArea.classList.remove('dragover');
+            }
+
+            handleDrop(e) {
+                e.preventDefault();
+                this.uploadArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].type === 'application/pdf') {
+                    this.pdfFile.files = files;
+                    this.handleFileSelect();
+                } else {
+                    this.showAlert('Please select a valid PDF file.', 'warning');
+                }
+            }
+
+            handleFileSelect() {
+                const file = this.pdfFile.files[0];
+                if (file) {
+                    this.currentFile = file;
+                    this.uploadBtn.disabled = false;
+                    this.updateStatus('File selected: ' + file.name, 'idle');
+                    this.uploadArea.innerHTML = `
+                        <i class="fas fa-file-pdf fa-3x text-success mb-3"></i>
+                        <h5>${file.name}</h5>
+                        <p class="text-muted">${(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    `;
+                }
+            }
+
+            async updateVerbosity() {
+                try {
+                    const response = await fetch('/set-verbosity', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({verbosity: this.verbosity.value})
+                    });
+                    
+                    if (response.ok) {
+                        this.showAlert(`Verbosity set to ${this.verbosity.value}`, 'info');
+                    }
+                } catch (error) {
+                    console.error('Error updating verbosity:', error);
+                }
+            }
+
+            async uploadPDF() {
+                if (!this.currentFile) return;
+
+                this.updateStatus('Uploading PDF...', 'processing');
+                this.showProgress(20);
+
+                const formData = new FormData();
+                formData.append('pdf', this.currentFile);
+                formData.append('verbosity', this.verbosity.value);
+
+                try {
+                    const response = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        this.showProgress(100);
+                        this.updateStatus('PDF uploaded successfully', 'complete');
+                        this.processBtn.disabled = false;
+                        this.generateBtn.disabled = false;
+                        this.cleanupBtn.disabled = false;
+                        this.showAlert('PDF uploaded to OpenAI File Search successfully!', 'success');
+                        
+                        // Show vector store info
+                        if (result.vector_store_id) {
+                            this.showAlert(`Vector Store ID: ${result.vector_store_id}`, 'info');
+                        }
+                    } else {
+                        throw new Error(result.error || 'Upload failed');
+                    }
+                } catch (error) {
+                    this.updateStatus('Upload failed', 'error');
+                    this.showAlert('Error: ' + error.message, 'danger');
+                } finally {
+                    setTimeout(() => this.hideProgress(), 2000);
+                }
+            }
+
+            async processPDF() {
+                this.updateStatus('Processing PDF with OpenAI File Search...', 'processing');
+                this.showProgress(30);
+
+                try {
+                    const response = await fetch('/process', {method: 'POST'});
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        this.showProgress(100);
+                        this.updateStatus('Processing complete', 'complete');
+                        this.displayResults(result);
+                        this.showAlert('PDF processed successfully! Review the results below.', 'success');
+                    } else {
+                        throw new Error(result.error || 'Processing failed');
+                    }
+                } catch (error) {
+                    this.updateStatus('Processing failed', 'error');
+                    this.showAlert('Error: ' + error.message, 'danger');
+                } finally {
+                    setTimeout(() => this.hideProgress(), 2000);
+                }
+            }
+
+            async generateReport() {
+                this.updateStatus('Generating PDF report...', 'processing');
+                this.showProgress(50);
+
+                try {
+                    const response = await fetch('/generate-report', {method: 'POST'});
+
+                    if (response.ok) {
+                        this.showProgress(100);
+                        this.updateStatus('Report generated successfully', 'complete');
+                        
+                        // Download the PDF
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `medical_report_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                        
+                        this.showAlert('PDF report generated and downloaded successfully!', 'success');
+                    } else {
+                        const result = await response.json();
+                        throw new Error(result.error || 'Report generation failed');
+                    }
+                } catch (error) {
+                    this.updateStatus('Report generation failed', 'error');
+                    this.showAlert('Error: ' + error.message, 'danger');
+                } finally {
+                    setTimeout(() => this.hideProgress(), 2000);
+                }
+            }
+
+            async cleanup() {
+                this.updateStatus('Cleaning up resources...', 'processing');
+                this.showProgress(50);
+
+                try {
+                    const response = await fetch('/cleanup', {method: 'POST'});
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        this.showProgress(100);
+                        this.updateStatus('Ready to Upload', 'idle');
+                        this.processBtn.disabled = true;
+                        this.generateBtn.disabled = true;
+                        this.cleanupBtn.disabled = true;
+                        this.resultsContainer.style.display = 'none';
+                        this.showAlert('Resources cleaned up successfully!', 'success');
+                        
+                        // Reset upload area
+                        this.uploadArea.innerHTML = `
+                            <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                            <h5>Drag & Drop PDF Here</h5>
+                            <p class="text-muted">or click to browse files</p>
+                        `;
+                        this.currentFile = null;
+                        this.uploadBtn.disabled = true;
+                        this.pdfFile.value = '';
+                    } else {
+                        throw new Error(result.error || 'Cleanup failed');
+                    }
+                } catch (error) {
+                    this.updateStatus('Cleanup failed', 'error');
+                    this.showAlert('Error: ' + error.message, 'danger');
+                } finally {
+                    setTimeout(() => this.hideProgress(), 2000);
+                }
+            }
+
+            displayResults(data) {
+                this.resultsContainer.style.display = 'block';
+
+                // Display variables
+                let variablesHtml = '';
+                for (const [key, values] of Object.entries(data.variables)) {
+                    variablesHtml += `
+                        <div class="variable-item">
+                            <strong>${key}:</strong>
+                            <div class="mt-2">
+                                ${Array.isArray(values) ? 
+                                    values.map(v => `<span class="badge bg-secondary me-1">${v}</span>`).join('') :
+                                    values
+                                }
+                            </div>
+                        </div>
+                    `;
+                }
+                this.variablesDisplay.innerHTML = variablesHtml;
+
+                // Display results preview (first few sections)
+                let resultsHtml = '';
+                let sectionCount = 0;
+                for (const [section, questions] of Object.entries(data.results)) {
+                    if (sectionCount >= 3) break; // Show only first 3 sections in preview
+                    
+                    resultsHtml += `
+                        <div class="variable-item">
+                            <strong>${section}</strong>
+                            <div class="mt-2 small">
+                    `;
+                    
+                    for (const [qId, answer] of Object.entries(questions)) {
+                        if (typeof answer === 'string') {
+                            resultsHtml += `<div><em>${qId}:</em> ${answer.substring(0, 150)}${answer.length > 150 ? '...' : ''}</div>`;
+                        } else {
+                            resultsHtml += `<div><em>${qId}:</em> [Multiple body part responses]</div>`;
+                        }
+                    }
+                    
+                    resultsHtml += `</div></div>`;
+                    sectionCount++;
+                }
+                
+                if (Object.keys(data.results).length > 3) {
+                    resultsHtml += `<div class="text-center mt-3"><small class="text-muted">... and ${Object.keys(data.results).length - 3} more sections</small></div>`;
+                }
+                
+                this.resultsPreview.innerHTML = resultsHtml;
+            }
+
+            updateStatus(message, type) {
+                this.statusBadge.className = `status-badge status-${type}`;
+                this.statusBadge.innerHTML = `<i class="fas fa-circle me-2"></i>${message}`;
+            }
+
+            showProgress(percent) {
+                this.progressContainer.style.display = 'block';
+                this.progressBar.style.width = percent + '%';
+            }
+
+            hideProgress() {
+                this.progressContainer.style.display = 'none';
+                this.progressBar.style.width = '0%';
+            }
+
+            showAlert(message, type) {
+                const alert = document.createElement('div');
+                alert.className = `alert alert-${type} alert-dismissible fade show`;
+                alert.innerHTML = `
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                this.alertContainer.appendChild(alert);
+
+                // Auto-dismiss after 5 seconds
+                setTimeout(() => {
+                    if (alert.parentNode) {
+                        alert.remove();
+                    }
+                }, 5000);
+            }
+        }
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', () => {
+            new PDFProcessor();
+        });
+    </script>
+</body>
+</html>
