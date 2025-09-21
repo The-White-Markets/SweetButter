@@ -110,6 +110,42 @@
             border-radius: 10px;
             border: none;
         }
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.85);
+            z-index: 1050;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .loading-box {
+            background: #ffffff;
+            padding: 24px 28px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            text-align: center;
+            min-width: 280px;
+        }
+        .loading-message {
+            margin-top: 12px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+        /* Prompt editor styles */
+        .editor-container { background: #fff; border-radius: 12px; padding: 16px; border: 1px solid #e9ecef; }
+        .editor-header { display: flex; justify-content: space-between; align-items: center; }
+        .vars-panel { background: #f7f9fc; border-radius: 10px; padding: 12px; border: 1px dashed #cbd5e0; }
+        .var-chip { display: inline-block; margin: 4px 6px 4px 0; padding: 6px 10px; border-radius: 999px; background: #edf2ff; color: #3730a3; cursor: pointer; font-weight: 600; font-size: 12px; }
+        .template-textarea { width: 100%; min-height: 100px; border-radius: 8px; border: 1px solid #ced4da; padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+        .small-hint { font-size: 12px; color: #6b7280; }
+        .toggle-advanced { cursor: pointer; color: #2563eb; font-size: 12px; font-weight: 600; }
+        .tab-btn { border-radius: 999px; padding: 6px 14px; font-weight: 600; }
+        .tab-btn.active { background: #667eea; color: white; border: none; }
     </style>
 </head>
 <body>
@@ -122,9 +158,14 @@
                             <i class="fas fa-file-medical-alt me-3"></i>
                             Medical Legal PDF Processor
                         </h2>
-                        <p class="mb-0 mt-2 opacity-75">Upload a PDF using OpenAI's File Search with Vector Stores</p>
+                        <p class="mb-0 mt-2 opacity-75">Upload a PDF and edit the prompts before you run. Variables are blanks written like {body_part}. Click a variable to insert it.</p>
+                        <div class="mt-3">
+                            <button class="btn btn-light tab-btn me-2 active" id="tabWorkflowBtn"><i class="fas fa-play me-1"></i>Workflow</button>
+                            <button class="btn btn-light tab-btn" id="tabPromptsBtn"><i class="fas fa-pen-to-square me-1"></i>Prompts</button>
+                        </div>
                     </div>
                     <div class="card-body p-4">
+                        <div id="workflowSection">
                         <!-- Status Display -->
                         <div class="mb-4 text-center">
                             <span id="statusBadge" class="status-badge status-idle">
@@ -160,6 +201,16 @@
                                  role="progressbar" id="progressBar" style="width: 0%"></div>
                         </div>
 
+                        <!-- One-Click Start -->
+                        <div class="row mb-3">
+                            <div class="col-md-6 offset-md-3 d-grid">
+                                <button class="btn btn-primary" id="startBtn" disabled>
+                                    <span class="start-btn-content"><i class="fas fa-play me-2"></i>Start (One-Click)</span>
+                                    <span class="start-btn-loading d-none"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Working...</span>
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- Control Buttons -->
                         <div class="row mb-4">
                             <div class="col-md-3 mb-2">
@@ -181,6 +232,53 @@
                                 <button class="btn btn-outline-secondary w-100" id="cleanupBtn" disabled>
                                     <i class="fas fa-trash me-2"></i>Cleanup
                                 </button>
+                            </div>
+                        </div>
+
+                        </div>
+
+                        <!-- Prompts Tab Section -->
+                        <div id="promptsSection" style="display:none;">
+                        <div class="mb-4" id="promptEditorSection">
+                            <div class="editor-container">
+                                <div class="editor-header mb-2">
+                                    <h5 class="mb-0"><i class="fas fa-pen-to-square me-2"></i>Edit Prompts (Guided)</h5>
+                                    <span class="toggle-advanced" id="toggleAdvanced">Switch to Advanced Editor</span>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <div class="small text-muted">Your changes are saved only for you and persist across runs.</div>
+                                            <button class="btn btn-sm btn-outline-secondary" id="addSectionBtn"><i class="fas fa-folder-plus me-1"></i>Add Section</button>
+                                        </div>
+                                        <div id="guidedEditor"></div>
+                                        <div class="small-hint mt-2">
+                                            <div><strong>How to use:</strong> 1) Type your prompt. 2) Click a variable to add a blank. 3) Press Run.</div>
+                                            <div>Variables are blanks that get filled for you. Keep the curly braces like <code>{body_part}</code>.</div>
+                                            <div class="text-danger mt-1" id="unknownVarWarning" style="display:none;">This prompt has an unknown variable. Use the buttons on the right to insert valid ones.</div>
+                                        </div>
+                                        <div class="mt-2">
+                                            <button class="btn btn-sm btn-outline-secondary me-2" id="resetPrompts"><i class="fas fa-undo me-1"></i>Reset to Defaults</button>
+                                            <button class="btn btn-sm btn-outline-primary me-2" id="savePrompts"><i class="fas fa-download me-1"></i>Save Prompts to File</button>
+                                            <label class="btn btn-sm btn-outline-primary me-2 mb-0">
+                                                <i class="fas fa-upload me-1"></i>Load Prompts from File
+                                                <input type="file" id="loadPromptsFile" accept="application/json" class="d-none" />
+                                            </label>
+                                            <button class="btn btn-sm btn-primary" id="runWithPrompts"><i class="fas fa-play me-1"></i>Run with Current Prompts</button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="vars-panel">
+                                            <strong><i class="fas fa-tags me-1"></i>Variables</strong>
+                                            <div id="variablesPalette" class="mt-2"></div>
+                                            <div class="small-hint mt-2">Click to add a variable where your cursor is.</div>
+                                            <hr />
+                                            <strong><i class="fas fa-eye me-1"></i>Preview</strong>
+                                            <div class="small text-muted">Example fill shows your blanks replaced with sample values.</div>
+                                            <div class="mt-2" id="previewBox" style="max-height:180px; overflow:auto; font-size:12px; background:#fff; border:1px solid #e5e7eb; border-radius:6px; padding:8px;"></div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -207,6 +305,15 @@
         </div>
     </div>
 
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-box">
+            <div class="spinner-border text-primary" role="status"></div>
+            <div class="loading-message" id="overlayMessage">Preparing...</div>
+        </div>
+    </div>
+
+    <script id="inline-prompts-json" type="application/json">{"version":"1.0","placeholders":[{"name":"Agreed Upon Body Parts","description":"Body parts that both lawyers accept"},{"name":"Disagreed Upon Body Parts","description":"Body parts that lawyers disagree on"},{"name":"Previous Injuries","description":"List of patient's previous injuries"},{"name":"Applicant Attorney Alleged Body Parts","description":"All body parts claimed by applicant attorney"}],"variablesPrompts":{"Agreed Upon Body Parts":"list all body parts that both the applicant and defense attorney say are accepted in each of their letters. Please confirm you only look at the exact body parts listed and their names.","Disagreed Upon Body Parts":"List all body parts that one lawyer says is accepted and another lawyer does not. Please confirm you only look at the exact body parts listed and their names.","Previous Injuries":"List all the previous injuries the patient has had, if they have had none then return an empty array. Return as a JSON array of strings."},"questions":{"1. Demographics":{"a":"Look at the defense attorney, applicant attorney letter and insurance company and itemize all the names and addresses of them.","b":"Look throughout the document and fill in the following, note that most information but sometimes not all can be found in notes, usually applicant or defense attorney letters: 1. Claimant Name: (Last, First) 2. Claimant Date of Birth: (mm/dd/yyyy) 3. Claimant Employer: 4. Claimant Occupation: 5. Claimant Date of Injury: (mm/dd/yyyy) 6. Claim number: 7. WCAB Number: 8. Date of Exam: (Leave this empty)"},"2. History of Injury (Patients Perspective)":{"a":"Review the patients entire history of injury as described from the patients perspective and summarize it in a single paragraph."},"3. History of Injury (Physicians Perspective)":{"a":"Review the patients entire history of injury as described from the physicans notes and summarize it in a single paragraph"},"4. Chief Complaints":{"a":{"template":"Describe the patients chief complaints for all the {body_part}","variable":"Agreed Upon Body Parts"},"b":{"template":"Describe the patients chief complaints for all the {body_part}","variable":"Disagreed Upon Body Parts"}},"5. Claimants Job":{"a":"Describe the job description of the claimants job and describe the specific job duties of the claimants job"},"6. Work Status":{"a":"Find the most recent work status and any work restrictions the claimant has","b":"Has the patient been taken off work? (If true write Patient is still working if false write Patient stopped working on (date) + write a 2 sentence explanation)"},"7. Previous Injuries":{"a":"Has the patient described any previous injuries If no then write Patient has has to previous injuries If yes then for each of the previous injuries reiterate how the patient described the injuries in a few sentences."},"8. Medical History":{"a":"Write a list of the entire non surgical medical history of the patient if applicable, if not, write No past medical history"},"9. Surgical History":{"a":"Write a list of the entire surgical history of the patient if applicable, if not, write No past surgical history"},"10. Allergies":{"a":"Write a list of all the patients allergies if applicable, if not, write Patient has no provided allergies"},"11. Current Medications":{"a":"Write a list of all the medications the claimant is currently taking"},"12. Social History":{"a":"Write a list of any alcohol recreational drug, recreational tabaco, or vape use the patient has had, as well as when they did it according to the medical record."},"13. Family history of illness":{"a":"Write a list of any past medical or surgical history of family members"},"16. Diagnostic Reports":{"a":"Summarize each and every MRI with the diagnostic results of the MRI, in 5 or less sentences in chronological order. If there are no studies/results output none of these studies were completed with a brief explanation","b":"Summarize each and every CT or CAT scan with the diagnostic results of the CT or CAT scan, in 5 or less sentences in chronological order.","c":"Summarize each and every X-Rays with the diagnostic results of the X-Rays, in 5 or less sentences in chronological order.","d":"Summarize each and every Ultra Sound with the diagnostic results of the Ultra Sound, in 5 or less sentences in chronological order.","e":"Summarize each and every electro diagnostics (also including EMG, NCV, or NCS) with the diagnostic results of the electro diagnostics (also including EMG, NCV, or NCS), in 5 or less sentences in chronological order."},"17. Doctors Notes":{"a":"Summarize every individual dated note in about 7 sentences each, with the date first in chronological order."},"20. Diagnostic impressions":{"a":{"template":"Look through all the medical records and identify the diagnostic impressions for {body_part}","variable":"Applicant Attorney Alleged Body Parts"}},"21. Causation":{"a":"Evaluate how and why this patients injury would be related to a specific injury at work","b":"Evaluate how and why this patients injury is secondary to cumulative trauma at work"},"22. Impairment":{"a":{"template":"For {body_part} go to the AMA 5th addition guidelines, find the appropriate impairment rating, and give a detailed description on how and why it has that impairment rating.","variable":"Applicant Attorney Alleged Body Parts"}},"23. Periods Of Total Disability":{"a":{"template":"For {body_part} explain how much time the average American would have to be completely off of work before they are transitioned to light duty.","variable":"Applicant Attorney Alleged Body Parts"}},"24. Future Medical Care":{"a":{"template":"For {body_part} define what future medical care would be needed according to the MTUS and ODG guidelines that would help cure or relieve current symptoms or future exacerbations.","variable":"Applicant Attorney Alleged Body Parts"}}}}</script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         class PDFProcessor {
@@ -223,6 +330,7 @@
                 this.processBtn = document.getElementById('processBtn');
                 this.generateBtn = document.getElementById('generateBtn');
                 this.cleanupBtn = document.getElementById('cleanupBtn');
+                this.startBtn = document.getElementById('startBtn');
                 this.statusBadge = document.getElementById('statusBadge');
                 this.progressContainer = document.getElementById('progressContainer');
                 this.progressBar = document.getElementById('progressBar');
@@ -231,6 +339,26 @@
                 this.variablesDisplay = document.getElementById('variablesDisplay');
                 this.resultsPreview = document.getElementById('resultsPreview');
                 this.verbosity = document.getElementById('verbosity');
+                this.loadingOverlay = document.getElementById('loadingOverlay');
+                this.overlayMessage = document.getElementById('overlayMessage');
+                this.startBtnContent = document.querySelector('#startBtn .start-btn-content');
+                this.startBtnLoading = document.querySelector('#startBtn .start-btn-loading');
+                // Tabs
+                this.tabWorkflowBtn = document.getElementById('tabWorkflowBtn');
+                this.tabPromptsBtn = document.getElementById('tabPromptsBtn');
+                this.workflowSection = document.getElementById('workflowSection');
+                this.promptsSection = document.getElementById('promptsSection');
+                // Prompts UI
+                this.promptEditorSection = document.getElementById('promptEditorSection');
+                this.guidedEditor = document.getElementById('guidedEditor');
+                this.variablesPalette = document.getElementById('variablesPalette');
+                this.previewBox = document.getElementById('previewBox');
+                this.toggleAdvancedBtn = document.getElementById('toggleAdvanced');
+                this.resetPromptsBtn = document.getElementById('resetPrompts');
+                this.savePromptsBtn = document.getElementById('savePrompts');
+                this.loadPromptsFile = document.getElementById('loadPromptsFile');
+                this.runWithPromptsBtn = document.getElementById('runWithPrompts');
+                this.addSectionBtn = document.getElementById('addSectionBtn');
             }
 
             setupEventListeners() {
@@ -248,9 +376,21 @@
                 this.processBtn.addEventListener('click', this.processPDF.bind(this));
                 this.generateBtn.addEventListener('click', this.generateReport.bind(this));
                 this.cleanupBtn.addEventListener('click', this.cleanup.bind(this));
+                this.startBtn.addEventListener('click', this.startProcessingFlow.bind(this));
 
                 // Verbosity change
                 this.verbosity.addEventListener('change', this.updateVerbosity.bind(this));
+
+                // Prompts
+                this.toggleAdvancedBtn.addEventListener('click', this.toggleAdvancedEditor.bind(this));
+                this.resetPromptsBtn.addEventListener('click', this.resetPrompts.bind(this));
+                this.savePromptsBtn.addEventListener('click', this.savePromptsToFile.bind(this));
+                this.loadPromptsFile.addEventListener('change', this.loadPromptsFromFile.bind(this));
+                this.runWithPromptsBtn.addEventListener('click', this.runWithPrompts.bind(this));
+                this.addSectionBtn.addEventListener('click', this.addSection.bind(this));
+                // Tabs
+                this.tabWorkflowBtn.addEventListener('click', () => this.switchTab('workflow'));
+                this.tabPromptsBtn.addEventListener('click', () => this.switchTab('prompts'));
             }
 
             handleDragOver(e) {
@@ -280,13 +420,28 @@
                 if (file) {
                     this.currentFile = file;
                     this.uploadBtn.disabled = false;
+                    this.startBtn.disabled = false;
                     this.updateStatus('File selected: ' + file.name, 'idle');
                     this.uploadArea.innerHTML = `
                         <i class="fas fa-file-pdf fa-3x text-success mb-3"></i>
                         <h5>${file.name}</h5>
                         <p class="text-muted">${(file.size / 1024 / 1024).toFixed(2)} MB</p>
                     `;
+                    this.ensurePromptsLoaded();
                 }
+            }
+
+            showOverlay(message) {
+                this.overlayMessage.textContent = message || 'Working...';
+                this.loadingOverlay.style.display = 'flex';
+            }
+
+            updateOverlay(message) {
+                this.overlayMessage.textContent = message;
+            }
+
+            hideOverlay() {
+                this.loadingOverlay.style.display = 'none';
             }
 
             async updateVerbosity() {
@@ -335,6 +490,7 @@
                         if (result.vector_store_id) {
                             this.showAlert(`Vector Store ID: ${result.vector_store_id}`, 'info');
                         }
+                        this.ensurePromptsLoaded();
                     } else {
                         throw new Error(result.error || 'Upload failed');
                     }
@@ -346,17 +502,95 @@
                 }
             }
 
+            async startProcessingFlow() {
+                if (!this.currentFile) {
+                    this.showAlert('Please select a PDF first.', 'warning');
+                    return;
+                }
+
+                // Disable controls during flow
+                const controls = [this.uploadBtn, this.processBtn, this.generateBtn, this.cleanupBtn, this.startBtn, this.verbosity];
+                controls.forEach(el => el.disabled = true);
+                this.startBtnContent.classList.add('d-none');
+                this.startBtnLoading.classList.remove('d-none');
+
+                try {
+                    // Step 1: Upload
+                    this.showOverlay('Uploading PDF...');
+                    const formData = new FormData();
+                    formData.append('pdf', this.currentFile);
+                    formData.append('verbosity', this.verbosity.value);
+
+                    let response = await fetch('/upload', { method: 'POST', body: formData });
+                    if (!response.ok) {
+                        const err = await response.json();
+                        throw new Error(err.error || 'Upload failed');
+                    }
+                    this.updateStatus('PDF uploaded successfully', 'complete');
+
+                    // Step 2: Process with current prompts
+                    this.updateOverlay('Processing with your prompts...');
+                    await this.ensurePromptsLoaded();
+                    response = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompts: this.currentPrompts }) });
+                    const processResult = await response.json();
+                    if (!response.ok) {
+                        throw new Error(processResult.error || 'Processing failed');
+                    }
+                    this.lastResults = processResult.results;
+                    this.displayResults(processResult);
+                    this.updateStatus('Processing complete', 'complete');
+
+                    // Step 3: Generate report and download
+                    this.updateOverlay('Generating report...');
+                    response = await fetch('/generate-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ results: this.lastResults }) });
+                    if (!response.ok) {
+                        const genErr = await response.json();
+                        throw new Error(genErr.error || 'Report generation failed');
+                    }
+
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `medical_report_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+
+                    this.updateOverlay('Downloaded report');
+                    this.showAlert('Report generated and downloaded successfully!', 'success');
+                } catch (error) {
+                    this.updateStatus('Flow failed', 'error');
+                    this.showAlert('Error: ' + error.message, 'danger');
+                } finally {
+                    // Re-enable some controls
+                    this.cleanupBtn.disabled = false;
+                    this.processBtn.disabled = false;
+                    this.generateBtn.disabled = false;
+                    this.startBtnContent.classList.remove('d-none');
+                    this.startBtnLoading.classList.add('d-none');
+                    this.hideOverlay();
+                    // Keep Start enabled if file remains selected
+                    this.startBtn.disabled = !this.currentFile;
+                    this.uploadBtn.disabled = !this.currentFile;
+                    this.verbosity.disabled = false;
+                }
+            }
+
             async processPDF() {
-                this.updateStatus('Processing PDF with OpenAI File Search...', 'processing');
+                this.updateStatus('Processing with your prompts...', 'processing');
                 this.showProgress(30);
 
                 try {
-                    const response = await fetch('/process', {method: 'POST'});
+                    await this.ensurePromptsLoaded();
+                    const response = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompts: this.currentPrompts }) });
                     const result = await response.json();
 
                     if (response.ok) {
                         this.showProgress(100);
                         this.updateStatus('Processing complete', 'complete');
+                        this.lastResults = result.results;
                         this.displayResults(result);
                         this.showAlert('PDF processed successfully! Review the results below.', 'success');
                     } else {
@@ -375,7 +609,11 @@
                 this.showProgress(50);
 
                 try {
-                    const response = await fetch('/generate-report', {method: 'POST'});
+                    let body = undefined;
+                    if (this.lastResults) {
+                        body = JSON.stringify({ results: this.lastResults });
+                    }
+                    const response = await fetch('/generate-report', {method: 'POST', headers: body ? { 'Content-Type': 'application/json' } : undefined, body});
 
                     if (response.ok) {
                         this.showProgress(100);
@@ -524,11 +762,391 @@
                     }
                 }, 5000);
             }
+
+            // ---------------- Prompts Editor Logic ----------------
+            async ensurePromptsLoaded() {
+                if (this.promptsLoaded) return;
+                
+                // Hard-coded fallback prompts if all else fails
+                const fallbackPrompts = {
+                    "version": "1.0",
+                    "placeholders": [
+                        {"name": "Agreed Upon Body Parts", "description": "Body parts that both lawyers accept"},
+                        {"name": "Disagreed Upon Body Parts", "description": "Body parts that lawyers disagree on"},
+                        {"name": "Previous Injuries", "description": "List of patient's previous injuries"},
+                        {"name": "Applicant Attorney Alleged Body Parts", "description": "All body parts claimed by applicant attorney"}
+                    ],
+                    "variablesPrompts": {
+                        "Agreed Upon Body Parts": "list all body parts that both the applicant and defense attorney say are accepted in each of their letters. Please confirm you only look at the exact body parts listed and their names.",
+                        "Disagreed Upon Body Parts": "List all body parts that one lawyer says is accepted and another lawyer does not. Please confirm you only look at the exact body parts listed and their names.",
+                        "Previous Injuries": "List all the previous injuries the patient has had, if they have had none then return an empty array. Return as a JSON array of strings."
+                    },
+                    "questions": {
+                        "1. Demographics": {
+                            "a": "Look at the defense attorney, applicant attorney letter and insurance company and itemize all the names and addresses of them.",
+                            "b": "Look throughout the document and fill in the following, note that most information but sometimes not all can be found in notes, usually applicant or defense attorney letters:\n                1. Claimant Name: (Last, First)\n                2. Claimant Date of Birth: (mm/dd/yyyy)\n                3. Claimant Employer: \n                4. Claimant Occupation:\n                5. Claimant Date of Injury: (mm/dd/yyyy)\n                6. Claim number:\n                7. WCAB Number: \n                8. Date of Exam: (Leave this empty)"
+                        },
+                        "2. History of Injury (Patients Perspective)": {
+                            "a": "Review the patients entire history of injury as described from the patients perspective and summarize it in a single paragraph."
+                        },
+                        "3. History of Injury (Physicians Perspective)": {
+                            "a": "Review the patients entire history of injury as described from the physicans notes and summarize it in a single paragraph"
+                        },
+                        "4. Chief Complaints": {
+                            "a": {"template": "Describe the patients chief complaints for all the {body_part}", "variable": "Agreed Upon Body Parts"},
+                            "b": {"template": "Describe the patients chief complaints for all the {body_part}", "variable": "Disagreed Upon Body Parts"}
+                        },
+                        "5. Claimants Job": {
+                            "a": "Describe the job description of the claimants job and describe the specific job duties of the claimants job"
+                        },
+                        "6. Work Status": {
+                            "a": "Find the most recent work status and any work restrictions the claimant has",
+                            "b": "Has the patient been taken off work? (If true write \"Patient is still working\" if false write Patient stopped working on (date) + write a 2 sentence explanation)"
+                        },
+                        "7. Previous Injuries": {
+                            "a": "Has the patient described any previous injuries\n                If no then write \"Patient has has to previous injuries\" \n                If yes then for each of the previous injuries reiterate how the patient described the injuries in a few sentences."
+                        },
+                        "8. Medical History": {
+                            "a": "Write a list of the entire non surgical medical history of the patient if applicable, if not, write \"No past medical history\""
+                        },
+                        "9. Surgical History": {
+                            "a": "Write a list of the entire surgical history of the patient if applicable, if not, write \"No past surgical history\""
+                        },
+                        "10. Allergies": {
+                            "a": "Write a list of all the patients allergies if applicable, if not, write \"Patient has no provided allergies\""
+                        },
+                        "11. Current Medications": {
+                            "a": "Write a list of all the medications the claimant is currently taking"
+                        },
+                        "12. Social History": {
+                            "a": "Write a list of any alcohol recreational drug, recreational tabaco, or vape use the patient has had, as well as when they did it according to the medical record."
+                        },
+                        "13. Family history of illness": {
+                            "a": "Write a list of any past medical or surgical history of family members"
+                        },
+                        "16. Diagnostic Reports": {
+                            "a": "Summarize each and every MRI with the diagnostic results of the MRI, in 5 or less sentences in chronological order. If there are no studies/results output \"none of these studies were completed\" with a brief explanation",
+                            "b": "Summarize each and every CT or CAT scan with the diagnostic results of the CT or CAT scan, in 5 or less sentences in chronological order.",
+                            "c": "Summarize each and every X-Rays with the diagnostic results of the X-Rays, in 5 or less sentences in chronological order.",
+                            "d": "Summarize each and every Ultra Sound with the diagnostic results of the Ultra Sound, in 5 or less sentences in chronological order.",
+                            "e": "Summarize each and every electro diagnostics (also including EMG, NCV, or NCS) with the diagnostic results of the electro diagnostics (also including EMG, NCV, or NCS), in 5 or less sentences in chronological order."
+                        },
+                        "17. Doctors Notes": {
+                            "a": "Summarize every individual dated note in about 7 sentences each, with the date first in chronological order."
+                        },
+                        "20. Diagnostic impressions": {
+                            "a": {"template": "Look through all the medical records and identify the diagnostic impressions for {body_part}", "variable": "Applicant Attorney Alleged Body Parts"}
+                        },
+                        "21. Causation": {
+                            "a": "Evaluate how and why this patients injury would be related to a specific injury at work",
+                            "b": "Evaluate how and why this patients injury is secondary to cumulative trauma at work"
+                        },
+                        "22. Impairment": {
+                            "a": {"template": "For {body_part} go to the AMA 5th addition guidelines, find the appropriate impairment rating, and give a detailed description on how and why it has that impairment rating.", "variable": "Applicant Attorney Alleged Body Parts"}
+                        },
+                        "23. Periods Of Total Disability": {
+                            "a": {"template": "For {body_part} explain how much time the average American would have to be completely off of work before they are transitioned to light duty.", "variable": "Applicant Attorney Alleged Body Parts"}
+                        },
+                        "24. Future Medical Care": {
+                            "a": {"template": "For {body_part} define what future medical care would be needed according to the MTUS and ODG guidelines that would help cure or relieve current symptoms or future exacerbations.", "variable": "Applicant Attorney Alleged Body Parts"}
+                        }
+                    }
+                };
+                
+                let defaults = fallbackPrompts;
+                
+                // 1) Try inline data (rendered server-side) first
+                try {
+                    const inline = document.getElementById('inline-prompts-json');
+                    if (inline && inline.textContent.trim().length > 0) {
+                        defaults = JSON.parse(inline.textContent);
+                    }
+                } catch {}
+                
+                // 2) Try API
+                if (!defaults || Object.keys(defaults).length === 0) {
+                    try {
+                        let res = await fetch('/api/prompts/default');
+                        if (res.ok) {
+                            defaults = await res.json();
+                        }
+                    } catch (e1) {
+                        // 3) Try direct file
+                        try {
+                            const res2 = await fetch('/prompts.json', { cache: 'no-store' });
+                            if (res2.ok) {
+                                defaults = await res2.json();
+                            }
+                        } catch (e2) {
+                            console.log('Using fallback prompts');
+                        }
+                    }
+                }
+                
+                this.defaultPrompts = defaults;
+                // Load local overrides
+                const saved = window.localStorage.getItem('sb_prompts');
+                this.currentPrompts = saved ? JSON.parse(saved) : defaults;
+                this.renderGuidedEditor();
+                this.renderVariablesPalette();
+                this.updatePreview();
+                this.promptsLoaded = true;
+            }
+
+            renderGuidedEditor() {
+                // Guided: render each simple question as a textarea; variable templates stay as-is
+                const questions = this.currentPrompts.questions || {};
+                let html = '';
+                for (const [section, qs] of Object.entries(questions)) {
+                    html += `<div class="mb-2 d-flex justify-content-between align-items-center"><strong>${section}</strong><button class="btn btn-sm btn-outline-secondary" data-add-prompt="${this.escape(section)}"><i class="fas fa-plus me-1"></i>Add Prompt</button></div>`;
+                    for (const [qid, val] of Object.entries(qs)) {
+                        if (typeof val === 'string') {
+                            html += `
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold">${qid}</label>
+                                    <textarea class="template-textarea" data-section="${this.escape(section)}" data-qid="${this.escape(qid)}">${this.escape(val)}</textarea>
+                                    <div class="small-hint">Tip: Add blanks using variables like {body_part}. Keep the braces.</div>
+                                </div>
+                            `;
+                        } else if (val && typeof val === 'object' && 'template' in val) {
+                            html += `
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold">${qid} (uses variable: ${val.variable})</label>
+                                    <textarea class="template-textarea" data-section="${this.escape(section)}" data-qid="${this.escape(qid)}" data-kind="templated">${this.escape(val.template)}</textarea>
+                                </div>
+                            `;
+                        }
+                    }
+                }
+                this.guidedEditor.innerHTML = html;
+                // Attach input listeners
+                this.guidedEditor.querySelectorAll('textarea').forEach(t => {
+                    t.addEventListener('input', (e) => this.handleTemplateEdit(e));
+                });
+                // Attach add prompt buttons
+                this.guidedEditor.querySelectorAll('button[data-add-prompt]').forEach(btn => {
+                    btn.addEventListener('click', () => this.addPrompt(btn.getAttribute('data-add-prompt')));
+                });
+            }
+
+            handleTemplateEdit(e) {
+                const ta = e.target;
+                const section = ta.getAttribute('data-section');
+                const qid = ta.getAttribute('data-qid');
+                const kind = ta.getAttribute('data-kind');
+                const value = ta.value;
+                if (!this.currentPrompts.questions[section]) return;
+                if (kind === 'templated') {
+                    if (typeof this.currentPrompts.questions[section][qid] === 'object') {
+                        this.currentPrompts.questions[section][qid].template = value;
+                    }
+                } else {
+                    this.currentPrompts.questions[section][qid] = value;
+                }
+                window.localStorage.setItem('sb_prompts', JSON.stringify(this.currentPrompts));
+                this.updatePreview();
+                this.validateVariables(ta.value);
+            }
+
+            async renderVariablesPalette() {
+                try {
+                    const res = await fetch('/api/variables');
+                    const vars = await res.json();
+                    const items = [];
+                    (vars.placeholders || []).forEach(p => {
+                        items.push(`<span class="var-chip" data-insert="{${this.escape(p.name)}}">{${this.escape(p.name)}}</span>`);
+                    });
+                    this.variablesPalette.innerHTML = items.join('');
+                    this.variablesPalette.querySelectorAll('.var-chip').forEach(chip => {
+                        chip.addEventListener('click', () => this.insertVariableAtCursor(chip.getAttribute('data-insert')));
+                    });
+                } catch (e) {
+                    // Ignore
+                }
+            }
+
+            insertVariableAtCursor(token) {
+                const active = document.activeElement;
+                if (active && active.tagName === 'TEXTAREA') {
+                    const start = active.selectionStart;
+                    const end = active.selectionEnd;
+                    const text = active.value;
+                    active.value = text.slice(0, start) + token + text.slice(end);
+                    const evt = new Event('input');
+                    active.dispatchEvent(evt);
+                    active.focus();
+                    active.selectionStart = active.selectionEnd = start + token.length;
+                } else {
+                    this.showAlert('Click inside a prompt first, then choose a variable.', 'info');
+                }
+            }
+
+            updatePreview() {
+                // Build a tiny preview: take first few prompts and replace {x} with demo values
+                const demoValues = { body_part: 'knee' };
+                const lines = [];
+                let count = 0;
+                for (const [section, qs] of Object.entries(this.currentPrompts.questions || {})) {
+                    for (const [qid, val] of Object.entries(qs)) {
+                        let t = (typeof val === 'string') ? val : (val && val.template) ? val.template : '';
+                        t = t.replace(/\{(\w+)\}/g, (m, g1) => demoValues[g1] || m);
+                        lines.push(`${section} ${qid}: ${t}`);
+                        count++;
+                        if (count >= 5) break;
+                    }
+                    if (count >= 5) break;
+                }
+                this.previewBox.textContent = lines.join('\n');
+            }
+
+            resetPrompts() {
+                this.currentPrompts = JSON.parse(JSON.stringify(this.defaultPrompts));
+                window.localStorage.setItem('sb_prompts', JSON.stringify(this.currentPrompts));
+                this.renderGuidedEditor();
+                this.updatePreview();
+                this.showAlert('Prompts reset to defaults. Your changes only affect you.', 'info');
+            }
+
+            savePromptsToFile() {
+                const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(this.currentPrompts, null, 2));
+                const a = document.createElement('a');
+                a.href = dataStr;
+                a.download = `prompts_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                this.showAlert('Prompts downloaded.', 'success');
+            }
+
+            async loadPromptsFromFile(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                try {
+                    const text = await file.text();
+                    const obj = JSON.parse(text);
+                    if (!obj || typeof obj !== 'object' || !obj.questions) throw new Error('Invalid prompts file');
+                    this.currentPrompts = obj;
+                    window.localStorage.setItem('sb_prompts', JSON.stringify(this.currentPrompts));
+                    this.renderGuidedEditor();
+                    this.updatePreview();
+                    this.showAlert('Prompts loaded from file.', 'success');
+                } catch (err) {
+                    this.showAlert('Invalid prompts file.', 'danger');
+                } finally {
+                    e.target.value = '';
+                }
+            }
+
+            async runWithPrompts() {
+                try {
+                    if (!this.currentFile) {
+                        this.showAlert('Upload a PDF first.', 'warning');
+                        return;
+                    }
+                    this.showOverlay('Running with your prompts...');
+                    const response = await fetch('/api/run', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompts: this.currentPrompts })
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || 'Run failed');
+                    // Show in results area
+                    this.lastResults = result.results;
+                    this.displayResults(result);
+                    // Offer prompts download used
+                    const used = result.echo && result.echo.prompts ? result.echo.prompts : this.currentPrompts;
+                    const a = document.createElement('a');
+                    a.href = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(used, null, 2));
+                    a.download = `used_prompts_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    this.showAlert('Run complete. Downloaded the prompts used for this run.', 'success');
+                } catch (e) {
+                    this.showAlert('Error: ' + e.message, 'danger');
+                } finally {
+                    this.hideOverlay();
+                }
+            }
+
+            toggleAdvancedEditor() {
+                // For now, Guided only; placeholder for advanced editor toggle
+                this.showAlert('Advanced editor coming soon. Guided editor is active.', 'info');
+            }
+
+            escape(s) {
+                if (s == null) return '';
+                return String(s)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            validateVariables(text) {
+                try {
+                    const allowed = new Set((this.defaultPrompts.placeholders || []).map(p => p.name));
+                    const unknown = [];
+                    text.replace(/\{(\w+)\}/g, (m, g1) => { if (!allowed.has(g1)) unknown.push(g1); });
+                    const warn = document.getElementById('unknownVarWarning');
+                    if (unknown.length > 0) {
+                        warn.style.display = '';
+                    } else {
+                        warn.style.display = 'none';
+                    }
+                } catch {}
+            }
+
+            addSection() {
+                const name = prompt('Name for the new section (e.g., 25. New Section):');
+                if (!name) return;
+                if (!this.currentPrompts.questions[name]) {
+                    this.currentPrompts.questions[name] = {};
+                    window.localStorage.setItem('sb_prompts', JSON.stringify(this.currentPrompts));
+                    this.renderGuidedEditor();
+                }
+            }
+
+            addPrompt(section) {
+                const id = prompt('Short ID for this prompt (e.g., a, b, c):');
+                if (!id) return;
+                const templated = confirm('Use a variable placeholder in this prompt? Click OK for templated, Cancel for simple.');
+                if (!this.currentPrompts.questions[section]) this.currentPrompts.questions[section] = {};
+                if (templated) {
+                    const template = prompt('Enter template text (use {body_part} for the body part variable):', 'Describe the patients chief complaints for all the {body_part}');
+                    const variable = 'Applicant Attorney Alleged Body Parts';
+                    this.currentPrompts.questions[section][id] = { template: template || '', variable };
+                } else {
+                    const text = prompt('Enter the prompt text:') || '';
+                    this.currentPrompts.questions[section][id] = text;
+                }
+                window.localStorage.setItem('sb_prompts', JSON.stringify(this.currentPrompts));
+                this.renderGuidedEditor();
+                this.updatePreview();
+            }
+
+            switchTab(which) {
+                if (which === 'workflow') {
+                    this.workflowSection.style.display = '';
+                    this.promptsSection.style.display = 'none';
+                    this.tabWorkflowBtn.classList.add('active');
+                    this.tabPromptsBtn.classList.remove('active');
+                } else {
+                    this.workflowSection.style.display = 'none';
+                    this.promptsSection.style.display = '';
+                    this.tabWorkflowBtn.classList.remove('active');
+                    this.tabPromptsBtn.classList.add('active');
+                    this.ensurePromptsLoaded();
+                }
+            }
         }
 
         // Initialize the application
         document.addEventListener('DOMContentLoaded', () => {
-            new PDFProcessor();
+            const app = new PDFProcessor();
+            app.ensurePromptsLoaded();
         });
     </script>
 </body>
