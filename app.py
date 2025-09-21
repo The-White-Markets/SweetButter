@@ -16,6 +16,7 @@ import tempfile
 import time
 import PyPDF2
 import fitz  # PyMuPDF for better PDF text extraction
+from xml.sax.saxutils import escape
 
 # Load environment variables
 load_dotenv()
@@ -518,8 +519,19 @@ class PDFProcessor:
         story.append(Paragraph("Generated using OpenAI File Search with Vector Stores", styles['Italic']))
         story.append(Spacer(1, 30))
         
-        # Process results
-        for section, questions in results.items():
+        # Helpers
+        def extract_section_number(name: str) -> int:
+            match = re.match(r"^(\d+)", str(name))
+            return int(match.group(1)) if match else 10**9
+
+        def format_text(text: str) -> str:
+            if text is None:
+                return ""
+            # Escape HTML then convert newlines to <br/>
+            return escape(str(text)).replace("\n", "<br/>")
+
+        # Process results in natural numeric order by leading section number
+        for section, questions in sorted(results.items(), key=lambda kv: (extract_section_number(kv[0]), str(kv[0]))):
             # Section header
             story.append(Paragraph(section, styles['Heading2']))
             story.append(Spacer(1, 12))
@@ -530,29 +542,29 @@ class PDFProcessor:
                 
                 if isinstance(answer, str):
                     # Simple answer
-                    story.append(Paragraph(answer, styles['Normal']))
+                    story.append(Paragraph(format_text(answer), styles['Normal']))
                 elif isinstance(answer, dict) and 'text' in answer:
                     # Answer with citations
-                    story.append(Paragraph(answer['text'], styles['Normal']))
+                    story.append(Paragraph(format_text(answer['text']), styles['Normal']))
                     if answer.get('citations'):
                         for c in answer['citations']:
                             pages = ", ".join(str(p) for p in (c.get('pages') or [])) or "n/a"
                             quote = (c.get('quote') or '').strip()
-                            story.append(Paragraph(f"<i>Source p. {pages}:</i> {quote}", styles['Italic']))
+                            story.append(Paragraph(f"<i>Source p. {pages}:</i> {escape(quote)}", styles['Italic']))
                         story.append(Spacer(1, 6))
                 elif isinstance(answer, dict):
                     # Variable-based answers
                     for body_part, body_part_answer in answer.items():
                         story.append(Paragraph(f"<b>{body_part}:</b>", styles['Normal']))
                         if isinstance(body_part_answer, dict) and 'text' in body_part_answer:
-                            story.append(Paragraph(body_part_answer['text'], styles['Normal']))
+                            story.append(Paragraph(format_text(body_part_answer['text']), styles['Normal']))
                             if body_part_answer.get('citations'):
                                 for c in body_part_answer['citations']:
                                     pages = ", ".join(str(p) for p in (c.get('pages') or [])) or "n/a"
                                     quote = (c.get('quote') or '').strip()
-                                    story.append(Paragraph(f"<i>Source p. {pages}:</i> {quote}", styles['Italic']))
+                                    story.append(Paragraph(f"<i>Source p. {pages}:</i> {escape(quote)}", styles['Italic']))
                         else:
-                            story.append(Paragraph(str(body_part_answer), styles['Normal']))
+                            story.append(Paragraph(format_text(str(body_part_answer)), styles['Normal']))
                         story.append(Spacer(1, 6))
                 
                 story.append(Spacer(1, 12))
@@ -751,8 +763,15 @@ def run_with_custom_prompts():
         if not processor.vector_store_id:
             return jsonify({'error': 'No PDF uploaded'}), 400
 
+        # Append fixed, non-editable output format to variable prompts at runtime
+        fixed_suffix = " Return ONLY a JSON array of strings. No explanations."
+        variables_prompts_with_format = {
+            key: (str(val or '').strip() + fixed_suffix)
+            for key, val in variables_prompts.items()
+        }
+
         # Extract variables and process questions based on provided prompts
-        variables = processor.extract_variables(variables_prompts)
+        variables = processor.extract_variables(variables_prompts_with_format)
         results = processor.process_questions(questions)
 
         return jsonify({

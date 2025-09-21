@@ -141,11 +141,14 @@
         .editor-header { display: flex; justify-content: space-between; align-items: center; }
         .vars-panel { background: #f7f9fc; border-radius: 10px; padding: 12px; border: 1px dashed #cbd5e0; }
         .var-chip { display: inline-block; margin: 4px 6px 4px 0; padding: 6px 10px; border-radius: 999px; background: #edf2ff; color: #3730a3; cursor: pointer; font-weight: 600; font-size: 12px; }
-        .template-textarea { width: 100%; min-height: 100px; border-radius: 8px; border: 1px solid #ced4da; padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+        .var-chip.fixed { background: #e2e8f0; color: #1f2937; border: 1px solid #cbd5e0; cursor: default; pointer-events: none; line-height: 1.2em; vertical-align: baseline; padding: 2px 8px; margin: 0 6px; }
+        .template-textarea { width: 100%; min-height: 100px; border-radius: 8px; border: 1px solid #ced4da; padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; overflow-y: hidden; resize: none; box-sizing: border-box; }
         .small-hint { font-size: 12px; color: #6b7280; }
         .toggle-advanced { cursor: pointer; color: #2563eb; font-size: 12px; font-weight: 600; }
         .tab-btn { border-radius: 999px; padding: 6px 14px; font-weight: 600; }
         .tab-btn.active { background: #667eea; color: white; border: none; }
+        /* Make templated editors expand to content */
+        .template-editor { height: auto !important; overflow-y: hidden !important; white-space: pre-wrap; box-sizing: border-box; }
     </style>
 </head>
 <body>
@@ -158,7 +161,7 @@
                             <i class="fas fa-file-medical-alt me-3"></i>
                             Medical Legal PDF Processor
                         </h2>
-                        <p class="mb-0 mt-2 opacity-75">Upload a PDF and edit the prompts before you run. Variables are blanks written like {body_part}. Click a variable to insert it.</p>
+                        <p class="mb-0 mt-2 opacity-75">Upload a PDF and edit the prompts before you run. Variable questions show a locked chip with the variable name; simple prompts let you insert variables.</p>
                         <div class="mt-3">
                             <button class="btn btn-light tab-btn me-2 active" id="tabWorkflowBtn"><i class="fas fa-play me-1"></i>Workflow</button>
                             <button class="btn btn-light tab-btn" id="tabPromptsBtn"><i class="fas fa-pen-to-square me-1"></i>Prompts</button>
@@ -205,7 +208,7 @@
                         <div class="row mb-3">
                             <div class="col-md-6 offset-md-3 d-grid">
                                 <button class="btn btn-primary" id="startBtn" disabled>
-                                    <span class="start-btn-content"><i class="fas fa-play me-2"></i>Start (One-Click)</span>
+                                    <span class="start-btn-content"><i class="fas fa-play me-2"></i>Start</span>
                                     <span class="start-btn-loading d-none"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Working...</span>
                                 </button>
                             </div>
@@ -213,17 +216,17 @@
 
                         <!-- Control Buttons -->
                         <div class="row mb-4">
-                            <div class="col-md-3 mb-2">
+                            <div class="col-md-3 mb-2" style="display:none;">
                                 <button class="btn btn-primary w-100" id="uploadBtn" disabled>
                                     <i class="fas fa-upload me-2"></i>Upload PDF
                                 </button>
                             </div>
-                            <div class="col-md-3 mb-2">
+                            <div class="col-md-3 mb-2" style="display:none;">
                                 <button class="btn btn-info w-100" id="processBtn" disabled>
                                     <i class="fas fa-cogs me-2"></i>Process & Preview
                                 </button>
                             </div>
-                            <div class="col-md-3 mb-2">
+                            <div class="col-md-3 mb-2" style="display:none;">
                                 <button class="btn btn-success w-100" id="generateBtn" disabled>
                                     <i class="fas fa-file-pdf me-2"></i>Generate Report
                                 </button>
@@ -252,10 +255,17 @@
                                             <button class="btn btn-sm btn-outline-secondary" id="addSectionBtn"><i class="fas fa-folder-plus me-1"></i>Add Section</button>
                                         </div>
                                         <div id="guidedEditor"></div>
+                                        <div class="mt-3">
+                                            <div class="mb-2 d-flex justify-content-between align-items-center">
+                                                <strong><i class="fas fa-sliders-h me-1"></i>Variables Prompts</strong>
+                                            </div>
+                                            <div id="variablesEditor"></div>
+                                            <div class="small-hint">These control how we extract the variables. Output formatting is fixed and applied automatically at run time.</div>
+                                        </div>
                                         <div class="small-hint mt-2">
-                                            <div><strong>How to use:</strong> 1) Type your prompt. 2) Click a variable to add a blank. 3) Press Run.</div>
-                                            <div>Variables are blanks that get filled for you. Keep the curly braces like <code>{body_part}</code>.</div>
-                                            <div class="text-danger mt-1" id="unknownVarWarning" style="display:none;">This prompt has an unknown variable. Use the buttons on the right to insert valid ones.</div>
+                                            <div><strong>How to use:</strong> 1) Type your prompt. 2) Use placeholders like <code>{body_part}</code> where needed. 3) Press Run.</div>
+                                            <div>Variables are blanks that get filled for you. Keep the curly braces as shown.</div>
+                                            <div class="text-danger mt-1" id="unknownVarWarning" style="display:none;">This prompt has an unknown variable placeholder.</div>
                                         </div>
                                         <div class="mt-2">
                                             <button class="btn btn-sm btn-outline-secondary me-2" id="resetPrompts"><i class="fas fa-undo me-1"></i>Reset to Defaults</button>
@@ -267,17 +277,7 @@
                                             <button class="btn btn-sm btn-primary" id="runWithPrompts"><i class="fas fa-play me-1"></i>Run with Current Prompts</button>
                                         </div>
                                     </div>
-                                    <div class="col-md-4">
-                                        <div class="vars-panel">
-                                            <strong><i class="fas fa-tags me-1"></i>Variables</strong>
-                                            <div id="variablesPalette" class="mt-2"></div>
-                                            <div class="small-hint mt-2">Click to add a variable where your cursor is.</div>
-                                            <hr />
-                                            <strong><i class="fas fa-eye me-1"></i>Preview</strong>
-                                            <div class="small text-muted">Example fill shows your blanks replaced with sample values.</div>
-                                            <div class="mt-2" id="previewBox" style="max-height:180px; overflow:auto; font-size:12px; background:#fff; border:1px solid #e5e7eb; border-radius:6px; padding:8px;"></div>
-                                        </div>
-                                    </div>
+                                    <!-- Removed right-side Variables/Preview panel -->
                                 </div>
                             </div>
                         </div>
@@ -351,6 +351,7 @@
                 // Prompts UI
                 this.promptEditorSection = document.getElementById('promptEditorSection');
                 this.guidedEditor = document.getElementById('guidedEditor');
+                this.variablesEditor = document.getElementById('variablesEditor');
                 this.variablesPalette = document.getElementById('variablesPalette');
                 this.previewBox = document.getElementById('previewBox');
                 this.toggleAdvancedBtn = document.getElementById('toggleAdvanced');
@@ -391,6 +392,9 @@
                 // Tabs
                 this.tabWorkflowBtn.addEventListener('click', () => this.switchTab('workflow'));
                 this.tabPromptsBtn.addEventListener('click', () => this.switchTab('prompts'));
+
+                // Resize editors on window resize
+                window.addEventListener('resize', () => this.autosizeAllEditors && this.autosizeAllEditors());
             }
 
             handleDragOver(e) {
@@ -887,46 +891,267 @@
                 // Load local overrides
                 const saved = window.localStorage.getItem('sb_prompts');
                 this.currentPrompts = saved ? JSON.parse(saved) : defaults;
+                // Ensure variablesPrompts exist and are sanitized for UI
+                this.currentPrompts.variablesPrompts = Object.fromEntries(
+                    Object.entries(this.currentPrompts.variablesPrompts || (defaults.variablesPrompts || {})).map(([k, v]) => [k, this.sanitizeVariablePromptText(v)])
+                );
                 this.renderGuidedEditor();
+                this.renderVariablesEditor();
                 this.renderVariablesPalette();
                 this.updatePreview();
+                // After initial render, autosize all editors once more
+                this.autosizeAllEditors = () => {
+                    this.guidedEditor.querySelectorAll('textarea').forEach(el => {
+                        el.style.height = 'auto';
+                        const cs = window.getComputedStyle(el);
+                        const border = parseInt(cs.borderTopWidth || '0') + parseInt(cs.borderBottomWidth || '0');
+                        el.style.height = (el.scrollHeight + border) + 'px';
+                    });
+                    this.guidedEditor.querySelectorAll('[data-templated-editor]').forEach(el => {
+                        el.style.height = 'auto';
+                        el.style.height = (el.scrollHeight + 2) + 'px';
+                    });
+                    this.variablesEditor.querySelectorAll('textarea').forEach(el => {
+                        el.style.height = 'auto';
+                        const cs = window.getComputedStyle(el);
+                        const border = parseInt(cs.borderTopWidth || '0') + parseInt(cs.borderBottomWidth || '0');
+                        el.style.height = (el.scrollHeight + border) + 'px';
+                    });
+                };
+                this.autosizeAllEditors();
                 this.promptsLoaded = true;
             }
 
             renderGuidedEditor() {
-                // Guided: render each simple question as a textarea; variable templates stay as-is
+                // Guided: simple questions use textarea; templated prompts use inline contenteditable with a locked chip
                 const questions = this.currentPrompts.questions || {};
                 let html = '';
                 for (const [section, qs] of Object.entries(questions)) {
-                    html += `<div class="mb-2 d-flex justify-content-between align-items-center"><strong>${section}</strong><button class="btn btn-sm btn-outline-secondary" data-add-prompt="${this.escape(section)}"><i class="fas fa-plus me-1"></i>Add Prompt</button></div>`;
+                    html += `<div class=\"mb-2 d-flex justify-content-between align-items-center\"><strong>${section}</strong><button class=\"btn btn-sm btn-outline-secondary\" data-add-prompt=\"${this.escape(section)}\"><i class=\"fas fa-plus me-1\"></i>Add Prompt</button></div>`;
                     for (const [qid, val] of Object.entries(qs)) {
                         if (typeof val === 'string') {
                             html += `
-                                <div class="mb-3">
-                                    <label class="form-label small fw-bold">${qid}</label>
-                                    <textarea class="template-textarea" data-section="${this.escape(section)}" data-qid="${this.escape(qid)}">${this.escape(val)}</textarea>
-                                    <div class="small-hint">Tip: Add blanks using variables like {body_part}. Keep the braces.</div>
+                                <div class=\"mb-3\">
+                                    <label class=\"form-label small fw-bold\">${qid}</label>
+                                    <textarea class=\"template-textarea\" data-section=\"${this.escape(section)}\" data-qid=\"${this.escape(qid)}\">${this.escape(val)}</textarea>
+                                    <div class=\"small-hint\"></div>
                                 </div>
                             `;
                         } else if (val && typeof val === 'object' && 'template' in val) {
+                            const ds = this.escape(section);
+                            const dq = this.escape(qid);
+                            const editorHTML = this.buildTemplatedInnerHTML(val.template || '', val.variable);
                             html += `
-                                <div class="mb-3">
-                                    <label class="form-label small fw-bold">${qid} (uses variable: ${val.variable})</label>
-                                    <textarea class="template-textarea" data-section="${this.escape(section)}" data-qid="${this.escape(qid)}" data-kind="templated">${this.escape(val.template)}</textarea>
+                                <div class=\"mb-3\">
+                                    <label class=\"form-label small fw-bold\">${qid} <span class=\"ms-1 small text-muted\">(variable)</span></label>
+                                    <div class=\"template-editor form-control form-control-sm\" contenteditable=\"true\" data-templated-editor data-section=\"${ds}\" data-qid=\"${dq}\" style=\"min-height: 38px;\">${editorHTML}</div>
+                                    <div class=\"small-hint\">Drag or edit text around the variable. The chip is locked.</div>
                                 </div>
                             `;
                         }
                     }
                 }
                 this.guidedEditor.innerHTML = html;
-                // Attach input listeners
+                // Attach listeners for simple textareas
+                const autoSize = (el) => {
+                    el.style.height = 'auto';
+                    const cs = window.getComputedStyle(el);
+                    const border = parseInt(cs.borderTopWidth || '0') + parseInt(cs.borderBottomWidth || '0');
+                    el.style.height = (el.scrollHeight + border) + 'px';
+                };
                 this.guidedEditor.querySelectorAll('textarea').forEach(t => {
-                    t.addEventListener('input', (e) => this.handleTemplateEdit(e));
+                    autoSize(t);
+                    t.addEventListener('input', (e) => { autoSize(t); this.handleTemplateEdit(e); });
+                    t.addEventListener('change', () => autoSize(t));
+                    t.addEventListener('focus', () => autoSize(t));
+                });
+                // Attach listeners for contenteditable templated editors
+                const autoSizeEditable = (el) => {
+                    el.style.minHeight = '0px';
+                    el.style.height = 'auto';
+                    const scrollH = el.scrollHeight;
+                    el.style.height = (scrollH + 2) + 'px';
+                };
+                this.guidedEditor.querySelectorAll('[data-templated-editor]').forEach(ed => {
+                    autoSizeEditable(ed);
+                    const save = () => {
+                        const section = ed.getAttribute('data-section');
+                        const qid = ed.getAttribute('data-qid');
+                        const template = this.serializeTemplatedEditor(ed);
+                        if (this.currentPrompts.questions[section] && typeof this.currentPrompts.questions[section][qid] === 'object') {
+                            this.currentPrompts.questions[section][qid].template = template;
+                            window.localStorage.setItem('sb_prompts', JSON.stringify(this.currentPrompts));
+                            this.updatePreview();
+                            this.validateVariables(template);
+                        }
+                    };
+                    ed.addEventListener('input', () => { autoSizeEditable(ed); save(); });
+                    ed.addEventListener('blur', save);
+                    ed.addEventListener('focus', () => autoSizeEditable(ed));
+                    ed.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); }
+                    });
+                    ed.addEventListener('beforeinput', (e) => {
+                        const type = e.inputType || '';
+                        // Allow normal typing; only guard deletes that would remove the chip
+                        if (type.startsWith('delete')) {
+                            if (this.deletionWouldHitChip(ed, type)) {
+                                e.preventDefault();
+                                return false;
+                            }
+                        } else if (type === 'insertFromDrop') {
+                            if (this.selectionTouchesChip()) {
+                                e.preventDefault();
+                                return false;
+                            }
+                        }
+                    });
+                    ed.addEventListener('paste', (e) => {
+                        // Paste as plain text to avoid unexpected nodes
+                        e.preventDefault();
+                        const text = (e.clipboardData || window.clipboardData).getData('text');
+                        document.execCommand('insertText', false, text);
+                    });
                 });
                 // Attach add prompt buttons
                 this.guidedEditor.querySelectorAll('button[data-add-prompt]').forEach(btn => {
                     btn.addEventListener('click', () => this.addPrompt(btn.getAttribute('data-add-prompt')));
                 });
+            }
+
+            renderVariablesEditor() {
+                const vprompts = this.currentPrompts.variablesPrompts || {};
+                const makeId = (name) => 'varp_' + name.replace(/\s+/g, '_').replace(/[^\w_]/g, '').toLowerCase();
+                let html = '';
+                Object.entries(vprompts).forEach(([name, text]) => {
+                    html += `
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">${this.escape(name)}</label>
+                            <textarea class="template-textarea" data-var-name="${this.escape(name)}" id="${makeId(name)}">${this.escape(this.sanitizeVariablePromptText(text))}</textarea>
+                        </div>
+                    `;
+                });
+                this.variablesEditor.innerHTML = html;
+                // Auto-sizing function for textareas
+                const autoSize = (el) => {
+                    el.style.height = 'auto';
+                    const cs = window.getComputedStyle(el);
+                    const border = parseInt(cs.borderTopWidth || '0') + parseInt(cs.borderBottomWidth || '0');
+                    el.style.height = (el.scrollHeight + border) + 'px';
+                };
+                this.variablesEditor.querySelectorAll('textarea').forEach(t => {
+                    autoSize(t);
+                    t.addEventListener('input', (e) => { 
+                        autoSize(t);
+                        const name = e.target.getAttribute('data-var-name');
+                        const value = e.target.value || '';
+                        if (!this.currentPrompts.variablesPrompts) this.currentPrompts.variablesPrompts = {};
+                        this.currentPrompts.variablesPrompts[name] = this.sanitizeVariablePromptText(value);
+                        window.localStorage.setItem('sb_prompts', JSON.stringify(this.currentPrompts));
+                    });
+                    t.addEventListener('change', () => autoSize(t));
+                    t.addEventListener('focus', () => autoSize(t));
+                });
+            }
+
+            buildTemplatedInnerHTML(template, variableName) {
+                const token = '{body_part}';
+                const parts = (template || '').split(token);
+                const chip = `<span class=\"var-chip fixed\" data-token=\"body_part\" contenteditable=\"false\">{${this.escape(variableName || 'Variable')}}</span>`;
+                return parts.map(p => this.escape(p)).join(chip);
+            }
+
+            serializeTemplatedEditor(el) {
+                const walk = (node) => {
+                    let out = '';
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        return node.nodeValue;
+                    }
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        const elem = node;
+                        if (elem.classList && elem.classList.contains('var-chip') && elem.getAttribute('data-token') === 'body_part') {
+                            return '{body_part}';
+                        }
+                        if (elem.tagName === 'BR') {
+                            return ' ';
+                        }
+                        elem.childNodes.forEach(child => { out += walk(child); });
+                        return out;
+                    }
+                    return '';
+                };
+                let result = '';
+                el.childNodes.forEach(n => { result += walk(n); });
+                return result;
+            }
+
+            selectionTouchesChip() {
+                try {
+                    const sel = window.getSelection();
+                    if (!sel || sel.rangeCount === 0) return false;
+                    const range = sel.getRangeAt(0);
+                    const checkNode = (n) => n && n.nodeType === 1 && n.classList && n.classList.contains('var-chip');
+                    const startEl = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+                    const endEl = range.endContainer.nodeType === 1 ? range.endContainer : range.endContainer.parentElement;
+                    if (startEl && (startEl.closest && startEl.closest('.var-chip'))) return true;
+                    if (endEl && (endEl.closest && endEl.closest('.var-chip'))) return true;
+                    // Also block when the immediate previous/next sibling is the chip and deletion would remove it
+                    if (range.collapsed) {
+                        const n = range.startContainer;
+                        if (n && n.nodeType === 3) {
+                            if (n.previousSibling && checkNode(n.previousSibling)) return true;
+                            if (n.nextSibling && checkNode(n.nextSibling)) return true;
+                        }
+                    }
+                    return false;
+                } catch { return true; }
+            }
+
+            deletionWouldHitChip(rootEl, inputType) {
+                try {
+                    const sel = window.getSelection();
+                    if (!sel || sel.rangeCount === 0) return false;
+                    const range = sel.getRangeAt(0);
+
+                    // If selection spans across the chip, block
+                    if (!range.collapsed) {
+                        const treeWalker = document.createTreeWalker(rootEl, NodeFilter.SHOW_ELEMENT, {
+                            acceptNode: (node) => node.classList && node.classList.contains('var-chip') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+                        });
+                        let node;
+                        while ((node = treeWalker.nextNode())) {
+                            if (range.intersectsNode(node)) return true;
+                        }
+                        return false;
+                    }
+
+                    const anchorNode = range.startContainer;
+                    const isText = anchorNode && anchorNode.nodeType === Node.TEXT_NODE;
+                    const parent = isText ? anchorNode.parentNode : anchorNode;
+                    if (!parent) return false;
+
+                    const prev = isText ? anchorNode.previousSibling : parent.previousSibling;
+                    const next = isText ? anchorNode.nextSibling : parent.nextSibling;
+
+                    const isChip = (n) => n && n.nodeType === 1 && n.classList && n.classList.contains('var-chip');
+
+                    if (inputType === 'deleteContentBackward') {
+                        // Backspace: if immediately after the chip
+                        if (isText) {
+                            if (prev && isChip(prev) && range.startOffset === 0) return true;
+                        } else if (isChip(prev)) {
+                            return true;
+                        }
+                    } else if (inputType === 'deleteContentForward') {
+                        // Delete: if immediately before the chip
+                        if (isText) {
+                            if (next && isChip(next) && range.startOffset === anchorNode.length) return true;
+                        } else if (isChip(next)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                } catch { return true; }
             }
 
             handleTemplateEdit(e) {
@@ -950,6 +1175,7 @@
 
             async renderVariablesPalette() {
                 try {
+                    if (!this.variablesPalette) { return; }
                     const res = await fetch('/api/variables');
                     const vars = await res.json();
                     const items = [];
@@ -983,6 +1209,7 @@
 
             updatePreview() {
                 // Build a tiny preview: take first few prompts and replace {x} with demo values
+                if (!this.previewBox) { return; }
                 const demoValues = { body_part: 'knee' };
                 const lines = [];
                 let count = 0;
@@ -1089,7 +1316,13 @@
                 try {
                     const allowed = new Set((this.defaultPrompts.placeholders || []).map(p => p.name));
                     const unknown = [];
-                    text.replace(/\{(\w+)\}/g, (m, g1) => { if (!allowed.has(g1)) unknown.push(g1); });
+                    const reserved = new Set(['body_part']);
+                    String(text || '').replace(/\{([^}]+)\}/g, (m, inner) => {
+                        const name = (inner || '').trim();
+                        if (reserved.has(name)) return m;
+                        if (!allowed.has(name)) unknown.push(name);
+                        return m;
+                    });
                     const warn = document.getElementById('unknownVarWarning');
                     if (unknown.length > 0) {
                         warn.style.display = '';
@@ -1097,6 +1330,17 @@
                         warn.style.display = 'none';
                     }
                 } catch {}
+            }
+
+            sanitizeVariablePromptText(text) {
+                try {
+                    let t = String(text || '');
+                    // Strip common JSON formatting directives from UI view
+                    t = t.replace(/\s*return[^.]*json[^.]*\./gi, '');
+                    t = t.replace(/\s*format[^.]*json[^.]*\./gi, '');
+                    t = t.replace(/\s*output[^.]*json[^.]*\./gi, '');
+                    return t.trim();
+                } catch { return text || ''; }
             }
 
             addSection() {
