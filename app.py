@@ -14,6 +14,8 @@ import re
 from datetime import datetime
 import tempfile
 import time
+import PyPDF2
+import fitz  # PyMuPDF for better PDF text extraction
 
 # Load environment variables
 load_dotenv()
@@ -31,12 +33,10 @@ client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 class PDFProcessor:
     def __init__(self):
         self.verbosity = "detailed"  # Can be "brief", "detailed", or "comprehensive"
-        self.vector_store_id = None
-        self.assistant_id = None
-        self.uploaded_file_id = None
+        self.pdf_content = None
         self.variables = {}
         
-    def upload_pdf_to_openai(self, pdf_file):
+    def extract_pdf_text(self, pdf_file):
         """Upload PDF to OpenAI and create vector store"""
         try:
             # Reset file pointer to beginning
@@ -148,13 +148,44 @@ class PDFProcessor:
         except Exception as e:
             logger.error(f"Error creating assistant: {str(e)}")
             return None
+
+    def _get_file_pages(self, file_id):
+        """Download an uploaded file and return its per-page text for citation lookup."""
+        try:
+            stream = client.files.content(file_id)
+            data = stream.read()
+            doc = fitz.open(stream=data, filetype="pdf")
+            pages = [doc[i].get_text() for i in range(doc.page_count)]
+            doc.close()
+            return pages
+        except Exception as e:
+            logger.error(f"Failed to download/parse file {file_id} for citations: {e}")
+            return []
+
+    def _find_quote_pages(self, file_id, quote):
+        """Return 1-based page numbers where the quoted text appears."""
+        if not quote:
+            return []
+        if not hasattr(self, "_pages_cache"):
+            self._pages_cache = {}
+        if file_id not in self._pages_cache:
+            self._pages_cache[file_id] = self._get_file_pages(file_id)
+        pages = self._pages_cache[file_id] or []
+        # Normalize whitespace for comparison
+        qn = re.sub(r"\s+", " ", quote).strip()
+        hits = []
+        for i, txt in enumerate(pages):
+            tn = re.sub(r"\s+", " ", (txt or ""))
+            if qn and qn in tn:
+                hits.append(i + 1)
+        return hits
     
-    def query_with_file_search(self, prompt, max_tokens=1000, max_retries=3):
-        """Query using OpenAI's file search with robust error handling and retries"""
+    def query_with_file_search(self, prompt, max_tokens=1000, max_retries=3, return_citations=False):
+        """Query using OpenAI's file search with robust error handling and optional citations"""
         for attempt in range(max_retries):
             try:
                 if not self.assistant_id:
-                    return "Error: Assistant not created"
+                    return {"text": "Error: Assistant not created", "citations": []} if return_citations else "Error: Assistant not created"
                 
                 # Add delay between requests to prevent rate limiting
                 if attempt > 0:
@@ -192,13 +223,49 @@ class PDFProcessor:
                     if run_status.status == 'completed':
                         # Get messages
                         messages = client.beta.threads.messages.list(thread_id=thread.id)
-                        
+
                         # Get the assistant's response
                         for message in messages.data:
                             if message.role == 'assistant':
-                                return message.content[0].text.value
-                        
-                        return "Error: No response from assistant"
+                                # Extract primary text
+                                if not return_citations:
+                                    try:
+                                        return message.content[0].text.value
+                                    except Exception:
+                                        return "Error: No response from assistant"
+
+                                text_val = None
+                                ann_list = []
+                                try:
+                                    item = message.content[0]
+                                    if hasattr(item, "text"):
+                                        text_val = item.text.value
+                                        ann_list = getattr(item.text, "annotations", []) or []
+                                except Exception:
+                                    pass
+
+                                cites = []
+                                for ann in ann_list:
+                                    try:
+                                        # Different SDKs may shape annotations slightly differently
+                                        if getattr(ann, "type", "") == "file_citation":
+                                            fid = None
+                                            quote = None
+                                            try:
+                                                fid = ann.file_citation.file_id
+                                                quote = getattr(ann.file_citation, "quote", None) or getattr(ann, "text", None)
+                                            except Exception:
+                                                fid = getattr(ann, "file_id", None)
+                                                quote = getattr(ann, "text", None)
+                                            pages = self._find_quote_pages(fid, quote) if fid and quote else []
+                                            cites.append({"file_id": fid, "pages": pages, "quote": quote})
+                                    except Exception:
+                                        continue
+
+                                return {"text": text_val or "", "citations": cites}
+
+                        # Fallback if no assistant message found
+                        return {"text": "Error: No response from assistant", "citations": []} if return_citations else "Error: No response from assistant"
                     
                     elif run_status.status in ['failed', 'cancelled', 'expired']:
                         logger.warning(f"Run failed with status: {run_status.status} (attempt {attempt + 1})")
@@ -209,7 +276,8 @@ class PDFProcessor:
                             break  # Try again
                         else:
                             # On final attempt, return a fallback response
-                            return self.get_fallback_response(prompt)
+                            fallback = self.get_fallback_response(prompt)
+                            return {"text": fallback, "citations": []} if return_citations else fallback
                     
                     time.sleep(check_interval)
                     wait_time += check_interval
@@ -219,16 +287,17 @@ class PDFProcessor:
                     if attempt < max_retries - 1:
                         continue  # Try again
                     else:
-                        return "Error: Query timed out after multiple attempts"
+                        return {"text": "Error: Query timed out after multiple attempts", "citations": []} if return_citations else "Error: Query timed out after multiple attempts"
                 
             except Exception as e:
                 logger.error(f"Error querying with file search (attempt {attempt + 1}): {str(e)}")
                 if attempt < max_retries - 1:
                     continue  # Try again
                 else:
-                    return f"Error processing query after {max_retries} attempts: {str(e)}"
+                    err = f"Error processing query after {max_retries} attempts: {str(e)}"
+                    return {"text": err, "citations": []} if return_citations else err
         
-        return "Error: All retry attempts failed"
+        return {"text": "Error: All retry attempts failed", "citations": []} if return_citations else "Error: All retry attempts failed"
     
     def get_fallback_response(self, prompt):
         """Provide a fallback response when assistant runs fail"""
@@ -248,11 +317,11 @@ class PDFProcessor:
         else:
             return "Unable to process this query due to technical issues. Please review the document manually."
     
-    def extract_variables(self):
+    def extract_variables(self, variables_config=None):
         """Extract required variables from the PDF using file search"""
-        variables_config = {
-            "Agreed Upon Body Parts": "List all body parts that both the applicant and defense attorney say are accepted in each of their letters. Return as a JSON array of strings.",
-            "Disagreed Upon Body Parts": "List all body parts that one lawyer says is accepted and another lawyer does not. Return as a JSON array of strings.",
+        variables_config = variables_config or {
+            "Agreed Upon Body Parts": "list all body parts that both the applicant and defense attorney say are accepted in each of their letters. Please confirm you only look at the exact body parts listed and their names.",
+            "Disagreed Upon Body Parts": "List all body parts that one lawyer says is accepted and another lawyer does not. Please confirm you only look at the exact body parts listed and their names.",
             "Previous Injuries": "List all the previous injuries the patient has had, if they have had none then return an empty array. Return as a JSON array of strings."
         }
         
@@ -290,13 +359,13 @@ class PDFProcessor:
         
         return self.variables
     
-    def process_questions(self):
+    def process_questions(self, questions_config=None):
         """Process all questions according to the specification using file search"""
         logger.info("Starting question processing with improved error handling")
         total_questions = 0
         processed_questions = 0
         
-        questions_config = {
+        questions_config = questions_config or {
             "1. Demographics": {
                 "a": "Look at the defense attorney, applicant attorney letter and insurance company and itemize all the names and addresses of them.",
                 "b": """Look throughout the document and fill in the following, note that most information but sometimes not all can be found in notes, usually applicant or defense attorney letters:
@@ -320,8 +389,7 @@ class PDFProcessor:
                 "b": {"template": "Describe the patients chief complaints for all the {body_part}", "variable": "Disagreed Upon Body Parts"}
             },
             "5. Claimants Job": {
-                "a": "Describe the job description of the claimants job",
-                "b": "Describe the specific job duties of the claimants job"
+                "a": "Describe the job description of the claimants job and describe the specific job duties of the claimants job"
             },
             "6. Work Status": {
                 "a": "Find the most recent work status and any work restrictions the claimant has",
@@ -401,7 +469,7 @@ class PDFProcessor:
                     # Simple question
                     processed_questions += 1
                     logger.info(f"Processing question {processed_questions}/{total_questions}: {section} - {question_id}")
-                    results[section][question_id] = self.query_with_file_search(question_data)
+                    results[section][question_id] = self.query_with_file_search(question_data, return_citations=True)
                     # Add small delay between questions to prevent rate limiting
                     time.sleep(0.5)
                 elif isinstance(question_data, dict) and "template" in question_data:
@@ -415,7 +483,7 @@ class PDFProcessor:
                         processed_questions += 1
                         logger.info(f"Processing question {processed_questions}/{total_questions}: {section} - {question_id} for {value}")
                         prompt = template.replace("{body_part}", value)
-                        results[section][question_id][value] = self.query_with_file_search(prompt)
+                        results[section][question_id][value] = self.query_with_file_search(prompt, return_citations=True)
                         # Add delay between variable-based questions
                         if i < len(variable_values) - 1:  # Don't delay after the last item
                             time.sleep(0.5)
@@ -463,11 +531,28 @@ class PDFProcessor:
                 if isinstance(answer, str):
                     # Simple answer
                     story.append(Paragraph(answer, styles['Normal']))
+                elif isinstance(answer, dict) and 'text' in answer:
+                    # Answer with citations
+                    story.append(Paragraph(answer['text'], styles['Normal']))
+                    if answer.get('citations'):
+                        for c in answer['citations']:
+                            pages = ", ".join(str(p) for p in (c.get('pages') or [])) or "n/a"
+                            quote = (c.get('quote') or '').strip()
+                            story.append(Paragraph(f"<i>Source p. {pages}:</i> {quote}", styles['Italic']))
+                        story.append(Spacer(1, 6))
                 elif isinstance(answer, dict):
                     # Variable-based answers
                     for body_part, body_part_answer in answer.items():
                         story.append(Paragraph(f"<b>{body_part}:</b>", styles['Normal']))
-                        story.append(Paragraph(body_part_answer, styles['Normal']))
+                        if isinstance(body_part_answer, dict) and 'text' in body_part_answer:
+                            story.append(Paragraph(body_part_answer['text'], styles['Normal']))
+                            if body_part_answer.get('citations'):
+                                for c in body_part_answer['citations']:
+                                    pages = ", ".join(str(p) for p in (c.get('pages') or [])) or "n/a"
+                                    quote = (c.get('quote') or '').strip()
+                                    story.append(Paragraph(f"<i>Source p. {pages}:</i> {quote}", styles['Italic']))
+                        else:
+                            story.append(Paragraph(str(body_part_answer), styles['Normal']))
                         story.append(Spacer(1, 6))
                 
                 story.append(Spacer(1, 12))
@@ -502,7 +587,15 @@ processor = PDFProcessor()
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    # Embed prompts.json inline to avoid fetch issues in some environments
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        prompts_path = os.path.join(base_dir, 'prompts.json')
+        with open(prompts_path, 'r') as f:
+            prompts_data = json.load(f)
+    except Exception:
+        prompts_data = {}
+    return render_template('index.html', prompts_json=json.dumps(prompts_data))
 
 @app.route('/upload', methods=['POST'])
 def upload_pdf():
@@ -519,7 +612,7 @@ def upload_pdf():
         processor.verbosity = verbosity
         
         # Upload PDF to OpenAI and create vector store
-        success = processor.upload_pdf_to_openai(pdf_file)
+        success = processor.extract_pdf_text(pdf_file)
         if not success:
             return jsonify({'error': 'Failed to upload PDF to OpenAI'}), 400
         
@@ -557,32 +650,30 @@ def process_pdf():
 @app.route('/generate-report', methods=['POST'])
 def generate_report():
     try:
-        if not processor.vector_store_id:
-            return jsonify({'error': 'No PDF uploaded'}), 400
+        # Allow direct PDF generation from provided results to support custom prompts
+        req_json = None
+        try:
+            req_json = request.get_json(silent=True) or {}
+        except Exception:
+            req_json = {}
+        provided_results = req_json.get('results') if isinstance(req_json, dict) else None
         
-        # Extract variables if not already done
-        if not processor.variables:
-            processor.extract_variables()
-        
-        # Process questions
-        results = processor.process_questions()
+        if provided_results is None:
+            if not processor.vector_store_id:
+                return jsonify({'error': 'No PDF uploaded'}), 400
+            # Extract variables if not already done
+            if not processor.variables:
+                processor.extract_variables()
+            # Process questions
+            results = processor.process_questions()
+        else:
+            results = provided_results
         
         # Generate PDF report
         pdf_buffer = processor.generate_pdf_report(results)
         
-        # Create reports directory if it doesn't exist
-        reports_dir = os.path.join(os.getcwd(), 'reports')
-        os.makedirs(reports_dir, exist_ok=True)
-        
-        # Save PDF to local file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f'medical_report_{timestamp}.pdf'
-        filepath = os.path.join(reports_dir, filename)
-        
-        with open(filepath, 'wb') as f:
-            f.write(pdf_buffer.getvalue())
-        
-        logger.info(f"PDF report saved to: {filepath}")
         
         return send_file(
             pdf_buffer,
@@ -593,6 +684,86 @@ def generate_report():
     
     except Exception as e:
         logger.error(f"Report generation error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/prompts/default', methods=['GET'])
+def get_default_prompts():
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        prompts_path = os.path.join(base_dir, 'prompts.json')
+        with open(prompts_path, 'r') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error reading prompts.json: {e}")
+        return jsonify({'error': 'Failed to load default prompts'}), 500
+
+@app.route('/prompts.json', methods=['GET'])
+def serve_prompts_json():
+    """Serve prompts.json for local development convenience."""
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        prompts_path = os.path.join(base_dir, 'prompts.json')
+        return send_file(prompts_path, mimetype='application/json')
+    except Exception as e:
+        logger.error(f"Error serving prompts.json: {e}")
+        return jsonify({'error': 'prompts.json not found'}), 404
+
+@app.route('/api/variables', methods=['GET'])
+def get_variables_pallete():
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        prompts_path = os.path.join(base_dir, 'prompts.json')
+        placeholders = []
+        variables = []
+        try:
+            with open(prompts_path, 'r') as f:
+                data = json.load(f)
+                placeholders = data.get('placeholders', [])
+                variables = [
+                    {"name": k, "description": v}
+                    for k, v in (data.get('variablesPrompts', {}) or {}).items()
+                ]
+        except Exception:
+            pass
+        return jsonify({
+            'placeholders': placeholders,
+            'variables': variables
+        })
+    except Exception as e:
+        logger.error(f"Error building variables palette: {e}")
+        return jsonify({'error': 'Failed to load variables'}), 500
+
+@app.route('/api/run', methods=['POST'])
+def run_with_custom_prompts():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Missing JSON body'}), 400
+
+        prompts = data.get('prompts')
+        if not prompts or not isinstance(prompts, dict):
+            return jsonify({'error': 'Missing prompts'}), 400
+
+        variables_prompts = prompts.get('variablesPrompts') or {}
+        questions = prompts.get('questions') or {}
+
+        if not processor.vector_store_id:
+            return jsonify({'error': 'No PDF uploaded'}), 400
+
+        # Extract variables and process questions based on provided prompts
+        variables = processor.extract_variables(variables_prompts)
+        results = processor.process_questions(questions)
+
+        return jsonify({
+            'variables': variables,
+            'results': results,
+            'echo': {
+                'prompts': prompts
+            }
+        })
+    except Exception as e:
+        logger.error(f"Run with custom prompts error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/set-verbosity', methods=['POST'])
@@ -695,4 +866,4 @@ def list_reports():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=1776)
+    app.run(debug=True, host='127.0.0.1', port=8080)
