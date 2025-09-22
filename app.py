@@ -36,7 +36,30 @@ class PDFProcessor:
         self.verbosity = "detailed"  # Can be "brief", "detailed", or "comprehensive"
         self.pdf_content = None
         self.variables = {}
+        self.vector_store_id = None
+        self.assistant_id = None
+        self.uploaded_file_id = None
+        self.file_name = None
+        self._pages_cache = {}
+        self.chat_thread_id = None
         
+    def _strip_inline_markers(self, text: str) -> str:
+        """Remove inline source markers like [4:5†source] or 【source】 from text."""
+        try:
+            t = str(text or '')
+            t = re.sub(r"[【\[]\d+(?::\d+)?\s*†?source[】\]]", "", t, flags=re.IGNORECASE)
+            t = re.sub(r"[【\[]\s*source\s*[】\]]", "", t, flags=re.IGNORECASE)
+            return t.strip()
+        except Exception:
+            return str(text or '')
+
+    def _normalize_for_match(self, text: str) -> str:
+        """Normalize text for fuzzy contains matching (lowercase, collapse spaces, strip punctuation)."""
+        t = re.sub(r"\s+", " ", str(text or '').lower()).strip()
+        # Remove most punctuation/specials; keep spaces and alphanumerics
+        t = re.sub(r"[^a-z0-9 ]+", "", t)
+        return t
+
     def extract_pdf_text(self, pdf_file):
         """Upload PDF to OpenAI and create vector store"""
         try:
@@ -56,6 +79,7 @@ class PDFProcessor:
                 )
             
             self.uploaded_file_id = uploaded_file.id
+            self.file_name = getattr(pdf_file, 'filename', None) or getattr(pdf_file, 'name', None)
             logger.info(f"File uploaded successfully: {self.uploaded_file_id}")
             
             # Create vector store
@@ -131,9 +155,14 @@ class PDFProcessor:
                 When extracting information:
                 - Be thorough and accurate
                 - Use the exact information from the documents
-                - For lists, format as JSON arrays when requested
+                - For variable extraction prompts only, output ONLY a JSON array of strings
                 - For dates, use mm/dd/yyyy format when specified
                 - Maintain professional medical/legal terminology
+                - Provide ONLY the requested information without any introductory phrases like "Here is the extracted information from the document:" or similar
+                - Start your response directly with the actual content
+                - For ALL normal questions/answers (i.e., anything other than variable extraction), respond in natural prose. Do NOT return JSON, YAML, code blocks, or tables. Use short paragraphs and simple bullet lists where appropriate.
+                - Do NOT wrap answers in triple backticks or any code fences.
+                - Do NOT insert inline [source] markers; citations will be attached separately.
                 
                 Always search through the uploaded documents to find relevant information before responding.""",
                 model="gpt-4o",
@@ -161,6 +190,17 @@ class PDFProcessor:
             return pages
         except Exception as e:
             logger.error(f"Failed to download/parse file {file_id} for citations: {e}")
+            # Fallback: try the originally uploaded file (same content, different id than vector store file)
+            try:
+                if getattr(self, 'uploaded_file_id', None) and self.uploaded_file_id != file_id:
+                    stream = client.files.content(self.uploaded_file_id)
+                    data = stream.read()
+                    doc = fitz.open(stream=data, filetype="pdf")
+                    pages = [doc[i].get_text() for i in range(doc.page_count)]
+                    doc.close()
+                    return pages
+            except Exception as e2:
+                logger.error(f"Fallback download failed for citations: {e2}")
             return []
 
     def _find_quote_pages(self, file_id, quote):
@@ -169,19 +209,27 @@ class PDFProcessor:
             return []
         if not hasattr(self, "_pages_cache"):
             self._pages_cache = {}
+        # Strip inline source markers like [4:5†source] or 【source】 before searching
+        q = self._strip_inline_markers(quote)
         if file_id not in self._pages_cache:
             self._pages_cache[file_id] = self._get_file_pages(file_id)
         pages = self._pages_cache[file_id] or []
         # Normalize whitespace for comparison
-        qn = re.sub(r"\s+", " ", quote).strip()
+        qn = re.sub(r"\s+", " ", q).strip()
+        qn_norm = self._normalize_for_match(qn)
         hits = []
         for i, txt in enumerate(pages):
             tn = re.sub(r"\s+", " ", (txt or ""))
             if qn and qn in tn:
                 hits.append(i + 1)
+                continue
+            # Fuzzy contains: compare normalized strings
+            tn_norm = self._normalize_for_match(tn)
+            if qn_norm and qn_norm in tn_norm:
+                hits.append(i + 1)
         return hits
     
-    def query_with_file_search(self, prompt, max_tokens=1000, max_retries=3, return_citations=False):
+    def query_with_file_search(self, prompt, max_tokens=1000, max_retries=3, return_citations=False, thread_id=None):
         """Query using OpenAI's file search with robust error handling and optional citations"""
         for attempt in range(max_retries):
             try:
@@ -194,19 +242,23 @@ class PDFProcessor:
                     logger.info(f"Retrying query (attempt {attempt + 1}/{max_retries}) after {delay}s delay")
                     time.sleep(delay)
                 
-                # Create a thread
-                thread = client.beta.threads.create()
+                # Use provided thread if available, otherwise create a fresh one
+                if thread_id:
+                    thread_id_to_use = thread_id
+                else:
+                    thread_obj = client.beta.threads.create()
+                    thread_id_to_use = thread_obj.id
                 
                 # Add message to thread
                 client.beta.threads.messages.create(
-                    thread_id=thread.id,
+                    thread_id=thread_id_to_use,
                     role="user",
                     content=prompt
                 )
                 
                 # Run the assistant
                 run = client.beta.threads.runs.create(
-                    thread_id=thread.id,
+                    thread_id=thread_id_to_use,
                     assistant_id=self.assistant_id
                 )
                 
@@ -217,13 +269,13 @@ class PDFProcessor:
                 
                 while wait_time < max_wait_time:
                     run_status = client.beta.threads.runs.retrieve(
-                        thread_id=thread.id,
+                        thread_id=thread_id_to_use,
                         run_id=run.id
                     )
                     
                     if run_status.status == 'completed':
                         # Get messages
-                        messages = client.beta.threads.messages.list(thread_id=thread.id)
+                        messages = client.beta.threads.messages.list(thread_id=thread_id_to_use)
 
                         # Get the assistant's response
                         for message in messages.data:
@@ -235,35 +287,76 @@ class PDFProcessor:
                                     except Exception:
                                         return "Error: No response from assistant"
 
-                                text_val = None
+                                # Aggregate text and annotations across all content parts; keep raw text for index extraction
+                                text_parts = []
                                 ann_list = []
                                 try:
-                                    item = message.content[0]
-                                    if hasattr(item, "text"):
-                                        text_val = item.text.value
-                                        ann_list = getattr(item.text, "annotations", []) or []
+                                    for item in (getattr(message, "content", []) or []):
+                                        try:
+                                            if hasattr(item, "text") and getattr(item.text, "value", None):
+                                                text_parts.append(item.text.value)
+                                                anns = getattr(item.text, "annotations", []) or []
+                                                if anns:
+                                                    # Attach the container text alongside each annotation when available
+                                                    for a in anns:
+                                                        try:
+                                                            if not hasattr(a, "_container_text"):
+                                                                setattr(a, "_container_text", item.text.value)
+                                                        except Exception:
+                                                            pass
+                                                    ann_list.extend(anns)
+                                        except Exception:
+                                            continue
                                 except Exception:
                                     pass
+                                text_val = "\n\n".join(text_parts) if text_parts else None
 
                                 cites = []
                                 for ann in ann_list:
                                     try:
-                                        # Different SDKs may shape annotations slightly differently
-                                        if getattr(ann, "type", "") == "file_citation":
-                                            fid = None
-                                            quote = None
+                                        # Normalize various annotation shapes
+                                        ann_type = getattr(ann, "type", "") or ""
+                                        if ann_type and ann_type != "file_citation":
+                                            # Only handle file citations
+                                            continue
+                                        file_citation_obj = getattr(ann, "file_citation", None)
+                                        fid = None
+                                        quote = None
+                                        if file_citation_obj is not None:
+                                            fid = getattr(file_citation_obj, "file_id", None)
+                                            quote = getattr(file_citation_obj, "quote", None)
+                                            # If indices are available, prefer slicing from container text to avoid artifacts
                                             try:
-                                                fid = ann.file_citation.file_id
-                                                quote = getattr(ann.file_citation, "quote", None) or getattr(ann, "text", None)
+                                                start_idx = getattr(file_citation_obj, "start_index", None)
+                                                end_idx = getattr(file_citation_obj, "end_index", None)
+                                                container = getattr(ann, "_container_text", None)
+                                                if container is None and isinstance(text_parts, list) and text_parts:
+                                                    container = text_parts[0]
+                                                if isinstance(start_idx, int) and isinstance(end_idx, int) and container:
+                                                    sliced = container[start_idx:end_idx]
+                                                    if sliced:
+                                                        quote = sliced
                                             except Exception:
-                                                fid = getattr(ann, "file_id", None)
-                                                quote = getattr(ann, "text", None)
-                                            pages = self._find_quote_pages(fid, quote) if fid and quote else []
-                                            cites.append({"file_id": fid, "pages": pages, "quote": quote})
+                                                pass
+                                        # Fallbacks
+                                        if not fid:
+                                            fid = getattr(ann, "file_id", None)
+                                        if not quote:
+                                            quote = getattr(ann, "quote", None) or getattr(ann, "text", None)
+                                        # Final cleanup of quote before lookup
+                                        if quote:
+                                            quote = self._strip_inline_markers(quote)
+                                        pages = self._find_quote_pages(fid, quote) if (fid and quote) else []
+                                        cites.append({"file_id": fid, "pages": pages, "quote": quote})
                                     except Exception:
                                         continue
 
-                                return {"text": text_val or "", "citations": cites}
+                                # If no citations found, attempt heuristic inference as a fallback
+                                if not cites:
+                                    inferred = self._infer_citations_from_text(text_val or "")
+                                else:
+                                    inferred = []
+                                return {"text": text_val or "", "citations": (cites or inferred)}
 
                         # Fallback if no assistant message found
                         return {"text": "Error: No response from assistant", "citations": []} if return_citations else "Error: No response from assistant"
@@ -300,6 +393,67 @@ class PDFProcessor:
         
         return {"text": "Error: All retry attempts failed", "citations": []} if return_citations else "Error: All retry attempts failed"
     
+    def _infer_citations_from_text(self, text: str, max_items: int = 3):
+        """Infer likely citation pages by keyword overlap when model did not return citations.
+
+        Heuristic: split answer into sentences, extract keywords (words length>=5),
+        and find pages that contain at least 3 of those keywords. Produce a short
+        snippet from the first matched keyword as the quote.
+        """
+        try:
+            if not text or not getattr(self, 'uploaded_file_id', None):
+                return []
+
+            pages = self._get_file_pages(self.uploaded_file_id)
+            if not pages:
+                return []
+
+            # Prepare sentences and keywords
+            raw = str(text)
+            # Basic sentence split
+            sentences = re.split(r"(?<=[.!?])\s+", raw)
+            # Build keyword set from top sentences
+            keywords = []
+            for s in sentences:
+                s_clean = re.sub(r"[^A-Za-z0-9\s]", " ", s)
+                words = [w.lower() for w in s_clean.split() if len(w) >= 5]
+                for w in words:
+                    if w not in keywords:
+                        keywords.append(w)
+                if len(keywords) >= 40:
+                    break
+
+            if not keywords:
+                return []
+
+            results = []
+            for idx, page_text in enumerate(pages):
+                if not page_text:
+                    continue
+                page_lower = page_text.lower()
+                hits = [kw for kw in keywords if kw in page_lower]
+                if len(hits) >= 3:
+                    # Build a small quote snippet around the first hit
+                    first = hits[0]
+                    pos = page_lower.find(first)
+                    if pos != -1:
+                        start = max(0, pos - 120)
+                        end = min(len(page_text), pos + 120)
+                        snippet = page_text[start:end].strip()
+                    else:
+                        snippet = page_text[:240].strip()
+                    results.append({
+                        "file_id": self.uploaded_file_id,
+                        "pages": [idx + 1],
+                        "quote": snippet
+                    })
+                if len(results) >= max_items:
+                    break
+            return results
+        except Exception as e:
+            logger.error(f"Error inferring citations: {e}")
+            return []
+
     def get_fallback_response(self, prompt):
         """Provide a fallback response when assistant runs fail"""
         # Extract key terms from the prompt for a basic response
@@ -547,10 +701,11 @@ class PDFProcessor:
                     # Answer with citations
                     story.append(Paragraph(format_text(answer['text']), styles['Normal']))
                     if answer.get('citations'):
-                        for c in answer['citations']:
+                        story.append(Paragraph("<b>Sources:</b>", styles['Normal']))
+                        for i, c in enumerate(answer['citations'], 1):
                             pages = ", ".join(str(p) for p in (c.get('pages') or [])) or "n/a"
                             quote = (c.get('quote') or '').strip()
-                            story.append(Paragraph(f"<i>Source p. {pages}:</i> {escape(quote)}", styles['Italic']))
+                            story.append(Paragraph(f"[{i}] Page {pages}: {escape(quote)}", styles['Italic']))
                         story.append(Spacer(1, 6))
                 elif isinstance(answer, dict):
                     # Variable-based answers
@@ -559,10 +714,11 @@ class PDFProcessor:
                         if isinstance(body_part_answer, dict) and 'text' in body_part_answer:
                             story.append(Paragraph(format_text(body_part_answer['text']), styles['Normal']))
                             if body_part_answer.get('citations'):
-                                for c in body_part_answer['citations']:
+                                story.append(Paragraph("<b>Sources:</b>", styles['Normal']))
+                                for i, c in enumerate(body_part_answer['citations'], 1):
                                     pages = ", ".join(str(p) for p in (c.get('pages') or [])) or "n/a"
                                     quote = (c.get('quote') or '').strip()
-                                    story.append(Paragraph(f"<i>Source p. {pages}:</i> {escape(quote)}", styles['Italic']))
+                                    story.append(Paragraph(f"[{i}] Page {pages}: {escape(quote)}", styles['Italic']))
                         else:
                             story.append(Paragraph(format_text(str(body_part_answer)), styles['Normal']))
                         story.append(Spacer(1, 6))
@@ -593,6 +749,14 @@ class PDFProcessor:
                 
         except Exception as e:
             logger.error(f"Error cleaning up resources: {str(e)}")
+        finally:
+            # Reset local state regardless of cleanup outcome
+            self.vector_store_id = None
+            self.assistant_id = None
+            self.uploaded_file_id = None
+            self.file_name = None
+            self.variables = {}
+            self._pages_cache = {}
 
 # Initialize processor
 processor = PDFProcessor()
@@ -746,6 +910,24 @@ def get_variables_pallete():
         logger.error(f"Error building variables palette: {e}")
         return jsonify({'error': 'Failed to load variables'}), 500
 
+@app.route('/api/status', methods=['GET'])
+def api_status():
+    """Report current server-side processing state so the UI can reuse uploaded PDFs."""
+    try:
+        has_pdf = bool(getattr(processor, 'vector_store_id', None))
+        return jsonify({
+            'has_pdf': has_pdf,
+            'vector_store_id': getattr(processor, 'vector_store_id', None),
+            'assistant_id': getattr(processor, 'assistant_id', None),
+            'uploaded_file_id': getattr(processor, 'uploaded_file_id', None),
+            'file_name': getattr(processor, 'file_name', None),
+            'verbosity': getattr(processor, 'verbosity', None),
+            'chat_thread_id': getattr(processor, 'chat_thread_id', None),
+        })
+    except Exception as e:
+        logger.error(f"Status error: {str(e)}")
+        return jsonify({'error': 'Failed to get status'}), 500
+
 @app.route('/api/run', methods=['POST'])
 def run_with_custom_prompts():
     try:
@@ -785,6 +967,131 @@ def run_with_custom_prompts():
         logger.error(f"Run with custom prompts error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/run-one', methods=['POST'])
+def run_single_prompt():
+    """Run a single prompt (simple or templated) and return its output.
+
+    Request JSON formats:
+    - { "type": "simple", "prompt": "..." }
+    - { "type": "templated", "template": "...{body_part}...", "variableName": "Agreed Upon Body Parts", "variablesPrompts": { ... } }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Missing JSON body'}), 400
+
+        if not processor.vector_store_id:
+            return jsonify({'error': 'No PDF uploaded'}), 400
+
+        run_type = str(data.get('type') or '').strip().lower()
+        if run_type not in ('simple', 'templated'):
+            return jsonify({'error': 'Invalid type. Expected "simple" or "templated"'}), 400
+
+        if run_type == 'simple':
+            prompt = (data.get('prompt') or '').strip()
+            if not prompt:
+                return jsonify({'error': 'Missing prompt'}), 400
+            result = processor.query_with_file_search(prompt, return_citations=True)
+            return jsonify({'kind': 'simple', 'result': result})
+
+        # Templated
+        template = (data.get('template') or '').strip()
+        variable_name = (data.get('variableName') or '').strip()
+        if not template or not variable_name:
+            return jsonify({'error': 'Missing template or variableName'}), 400
+
+        # Ensure variables are available; extract if missing using provided variablesPrompts
+        if not processor.variables:
+            variables_prompts = (data.get('variablesPrompts') or {})
+            fixed_suffix = " Return ONLY a JSON array of strings. No explanations."
+            variables_prompts_with_format = {
+                key: (str(val or '').strip() + fixed_suffix)
+                for key, val in (variables_prompts.items() if isinstance(variables_prompts, dict) else [])
+            }
+            try:
+                processor.extract_variables(variables_prompts_with_format)
+            except Exception:
+                # continue even if extraction fails; we'll default to empty
+                pass
+
+        values = processor.variables.get(variable_name, []) or []
+        # If this is the combined key that depends on other vars and it's still empty, try to synthesize it
+        if not values and variable_name == "Applicant Attorney Alleged Body Parts":
+            combined = (processor.variables.get("Agreed Upon Body Parts", []) or []) + (processor.variables.get("Disagreed Upon Body Parts", []) or [])
+            values = combined
+
+        results_by_value = {}
+        if values:
+            for i, value in enumerate(values):
+                try:
+                    prompt = template.replace('{body_part}', str(value))
+                    results_by_value[value] = processor.query_with_file_search(prompt, return_citations=True)
+                    if i < len(values) - 1:
+                        time.sleep(0.3)
+                except Exception as e:
+                    results_by_value[value] = {'text': f'Error: {str(e)}', 'citations': []}
+        else:
+            # If no values, run once with a placeholder to at least return something useful
+            placeholder_prompt = template.replace('{body_part}', '(no variable values)')
+            results_by_value['(no values)'] = processor.query_with_file_search(placeholder_prompt, return_citations=True)
+
+        return jsonify({'kind': 'templated', 'resultsByValue': results_by_value, 'variableName': variable_name})
+    except Exception as e:
+        logger.error(f"Run single prompt error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chat', methods=['POST'])
+def chat_with_context():
+    """Send a chat message and maintain conversation context via a reusable thread.
+
+    Request JSON:
+    {
+      "message": "...",                # required
+      "reset": false                    # optional: if true, start a new thread
+    }
+
+    Response JSON:
+    {
+      "threadId": "...",
+      "answer": { "text": "...", "citations": [...] }
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Missing JSON body'}), 400
+
+        if not processor.vector_store_id:
+            return jsonify({'error': 'No PDF uploaded'}), 400
+
+        user_message = (data.get('message') or '').strip()
+        if not user_message:
+            return jsonify({'error': 'Missing message'}), 400
+
+        # Optionally reset the chat thread
+        if bool(data.get('reset')):
+            processor.chat_thread_id = None
+
+        # Ensure we have a thread id to keep context
+        if not processor.chat_thread_id:
+            thread_obj = client.beta.threads.create()
+            processor.chat_thread_id = thread_obj.id
+
+        result = processor.query_with_file_search(
+            user_message,
+            return_citations=True,
+            thread_id=processor.chat_thread_id
+        )
+
+        return jsonify({
+            'threadId': processor.chat_thread_id,
+            'answer': result
+        })
+    except Exception as e:
+        logger.error(f"Chat error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/set-verbosity', methods=['POST'])
 def set_verbosity():
     try:
@@ -805,9 +1112,14 @@ def set_verbosity():
                 When extracting information:
                 - Be thorough and accurate
                 - Use the exact information from the documents
-                - For lists, format as JSON arrays when requested
+                - For variable extraction prompts only, output ONLY a JSON array of strings
                 - For dates, use mm/dd/yyyy format when specified
                 - Maintain professional medical/legal terminology
+                - Provide ONLY the requested information without any introductory phrases like "Here is the extracted information from the document:" or similar
+                - Start your response directly with the actual content
+                - For ALL normal questions/answers (i.e., anything other than variable extraction), respond in natural prose. Do NOT return JSON, YAML, code blocks, or tables. Use short paragraphs and simple bullet lists where appropriate.
+                - Do NOT wrap answers in triple backticks or any code fences.
+                - Do NOT insert inline [source] markers; citations will be attached separately.
                 
                 Always search through the uploaded documents to find relevant information before responding."""
             )
@@ -822,6 +1134,8 @@ def cleanup():
     """Clean up OpenAI resources"""
     try:
         processor.cleanup_resources()
+        # Reset chat thread; note: Threads cannot be deleted via API, so we just drop the reference
+        processor.chat_thread_id = None
         return jsonify({'message': 'Resources cleaned up successfully'})
     except Exception as e:
         logger.error(f"Cleanup error: {str(e)}")

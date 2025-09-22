@@ -13,7 +13,10 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         .container {
-            max-width: 900px;
+            max-width: 100%;
+            width: 100%;
+            padding-left: 20px;
+            padding-right: 20px;
         }
         .card {
             border: none;
@@ -149,12 +152,156 @@
         .tab-btn.active { background: #667eea; color: white; border: none; }
         /* Make templated editors expand to content */
         .template-editor { height: auto !important; overflow-y: hidden !important; white-space: pre-wrap; box-sizing: border-box; }
+        
+        /* Output display styling */
+        .output-display {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-y: auto;
+            min-height: 500px;
+            max-height: 80vh;
+        }
+        
+        .output-display h1, .output-display h2, .output-display h3, .output-display h4, .output-display h5, .output-display h6 {
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .output-display h1 { font-size: 1.5em; }
+        .output-display h2 { font-size: 1.3em; }
+        .output-display h3 { font-size: 1.2em; }
+        .output-display h4 { font-size: 1.1em; }
+        .output-display h5 { font-size: 1em; }
+        .output-display h6 { font-size: 0.9em; }
+        
+        .output-display strong, .output-display b {
+            font-weight: bold;
+            color: #000;
+        }
+        
+        .output-display em, .output-display i {
+            font-style: italic;
+        }
+        
+        .output-display ul, .output-display ol {
+            margin: 0.5em 0;
+            padding-left: 2em;
+        }
+        
+        .output-display li {
+            margin: 0.25em 0;
+        }
+        
+        .output-display p {
+            margin: 0.5em 0;
+        }
+        
+        .output-display code {
+            background: #e9ecef;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: inherit;
+        }
+        
+        .output-display pre {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 1em 0;
+        }
+        
+        .output-display blockquote {
+            border-left: 4px solid #dee2e6;
+            margin: 1em 0;
+            padding-left: 1em;
+            color: #6c757d;
+        }
+        
+        /* Citation formatting styles */
+        .citation-item {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            font-size: 0.9em;
+        }
+        
+        .citation-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .citation-number {
+            background: #007bff;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        
+        .citation-source {
+            color: #495057;
+            font-weight: 500;
+        }
+        
+        .citation-file-id {
+            color: #6c757d;
+            font-size: 0.85em;
+            font-family: monospace;
+        }
+        
+        .citation-quote {
+            background: white;
+            border-left: 3px solid #007bff;
+            padding: 8px 12px;
+            margin-top: 8px;
+            font-style: italic;
+            color: #495057;
+            border-radius: 0 4px 4px 0;
+        }
+        
+        .citation-badge {
+            background: #17a2b8;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 0.75em;
+            margin-left: 8px;
+        }
+        
+        .citations-section {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 8px;
+        }
+        
+        .answer-text {
+            line-height: 1.6;
+            color: #495057;
+        }
     </style>
 </head>
 <body>
-    <div class="container py-5">
-        <div class="row justify-content-center">
-            <div class="col-lg-10">
+    <div class="container-fluid py-5">
+        <div class="row">
+            <div class="col-12">
                 <div class="card">
                     <div class="card-header text-center py-4">
                         <h2 class="mb-0">
@@ -177,7 +324,7 @@
                         </div>
 
                         <!-- Verbosity Control -->
-                        <div class="row mb-4">
+                        <div class="row mb-4 d-none">
                             <div class="col-md-6 offset-md-3">
                                 <label for="verbosity" class="form-label fw-bold">
                                     <i class="fas fa-sliders-h me-2"></i>Response Detail Level
@@ -249,7 +396,7 @@
                                     <span class="toggle-advanced" id="toggleAdvanced">Switch to Advanced Editor</span>
                                 </div>
                                 <div class="row">
-                                    <div class="col-md-8">
+                                    <div class="col-md-4">
                                         <div class="d-flex justify-content-between align-items-center mb-2">
                                             <div class="small text-muted">Your changes are saved only for you and persist across runs.</div>
                                             <button class="btn btn-sm btn-outline-secondary" id="addSectionBtn"><i class="fas fa-folder-plus me-1"></i>Add Section</button>
@@ -277,7 +424,27 @@
                                             <button class="btn btn-sm btn-primary" id="runWithPrompts"><i class="fas fa-play me-1"></i>Run with Current Prompts</button>
                                         </div>
                                     </div>
-                                    <!-- Removed right-side Variables/Preview panel -->
+                                    <div class="col-md-8">
+                                        <div class="vars-panel">
+                                            <h6 class="mb-2"><i class="fas fa-terminal me-1"></i>Single Prompt Output</h6>
+                                            <div class="small text-muted mb-2">Click "Run Prompt" next to any prompt to preview its output here.</div>
+                                            <div id="singleRunOutput" class="output-display"></div>
+                                            <div class="vars-panel mt-4">
+                                                <h6 class="mb-2"><i class="fas fa-comments me-1"></i>Chat (Follow-up Questions)</h6>
+                                                <div id="chatMessages" class="output-display" style="height: 260px; overflow:auto;"></div>
+                                                <div class="input-group mt-2">
+                                                    <input id="chatInput" type="text" class="form-control" placeholder="Ask a follow-up question..." />
+                                                    <button id="chatSend" class="btn btn-primary"><i class="fas fa-paper-plane me-1"></i>Send</button>
+                                                    <button id="chatReset" class="btn btn-outline-secondary"><i class="fas fa-broom me-1"></i>Reset</button>
+                                                </div>
+                                                <div class="small text-muted mt-2 d-none" id="chatTyping">
+                                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                                    Assistant is typing...
+                                                </div>
+                                                <div class="small text-muted mt-1" id="chatThreadInfo"></div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -292,8 +459,14 @@
 
                             <!-- Processing Results -->
                             <div class="mb-4">
-                                <h5><i class="fas fa-list-alt me-2"></i>Processing Results Preview</h5>
+                                <h5><i class="fas fa-list-alt me-2"></i>Processing Results</h5>
+                                <div class="mb-3">
+                                    <button id="toggleDetailedView" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye me-1"></i>Show Detailed View
+                                    </button>
+                                </div>
                                 <div id="resultsPreview" class="variables-display"></div>
+                                <div id="detailedResults" class="variables-display" style="display: none;"></div>
                             </div>
                         </div>
 
@@ -314,6 +487,8 @@
     </div>
 
     <script id="inline-prompts-json" type="application/json">{"version":"1.0","placeholders":[{"name":"Agreed Upon Body Parts","description":"Body parts that both lawyers accept"},{"name":"Disagreed Upon Body Parts","description":"Body parts that lawyers disagree on"},{"name":"Previous Injuries","description":"List of patient's previous injuries"},{"name":"Applicant Attorney Alleged Body Parts","description":"All body parts claimed by applicant attorney"}],"variablesPrompts":{"Agreed Upon Body Parts":"list all body parts that both the applicant and defense attorney say are accepted in each of their letters. Please confirm you only look at the exact body parts listed and their names.","Disagreed Upon Body Parts":"List all body parts that one lawyer says is accepted and another lawyer does not. Please confirm you only look at the exact body parts listed and their names.","Previous Injuries":"List all the previous injuries the patient has had, if they have had none then return an empty array. Return as a JSON array of strings."},"questions":{"1. Demographics":{"a":"Look at the defense attorney, applicant attorney letter and insurance company and itemize all the names and addresses of them.","b":"Look throughout the document and fill in the following, note that most information but sometimes not all can be found in notes, usually applicant or defense attorney letters: 1. Claimant Name: (Last, First) 2. Claimant Date of Birth: (mm/dd/yyyy) 3. Claimant Employer: 4. Claimant Occupation: 5. Claimant Date of Injury: (mm/dd/yyyy) 6. Claim number: 7. WCAB Number: 8. Date of Exam: (Leave this empty)"},"2. History of Injury (Patients Perspective)":{"a":"Review the patients entire history of injury as described from the patients perspective and summarize it in a single paragraph."},"3. History of Injury (Physicians Perspective)":{"a":"Review the patients entire history of injury as described from the physicans notes and summarize it in a single paragraph"},"4. Chief Complaints":{"a":{"template":"Describe the patients chief complaints for all the {body_part}","variable":"Agreed Upon Body Parts"},"b":{"template":"Describe the patients chief complaints for all the {body_part}","variable":"Disagreed Upon Body Parts"}},"5. Claimants Job":{"a":"Describe the job description of the claimants job and describe the specific job duties of the claimants job"},"6. Work Status":{"a":"Find the most recent work status and any work restrictions the claimant has","b":"Has the patient been taken off work? (If true write Patient is still working if false write Patient stopped working on (date) + write a 2 sentence explanation)"},"7. Previous Injuries":{"a":"Has the patient described any previous injuries If no then write Patient has has to previous injuries If yes then for each of the previous injuries reiterate how the patient described the injuries in a few sentences."},"8. Medical History":{"a":"Write a list of the entire non surgical medical history of the patient if applicable, if not, write No past medical history"},"9. Surgical History":{"a":"Write a list of the entire surgical history of the patient if applicable, if not, write No past surgical history"},"10. Allergies":{"a":"Write a list of all the patients allergies if applicable, if not, write Patient has no provided allergies"},"11. Current Medications":{"a":"Write a list of all the medications the claimant is currently taking"},"12. Social History":{"a":"Write a list of any alcohol recreational drug, recreational tabaco, or vape use the patient has had, as well as when they did it according to the medical record."},"13. Family history of illness":{"a":"Write a list of any past medical or surgical history of family members"},"16. Diagnostic Reports":{"a":"Summarize each and every MRI with the diagnostic results of the MRI, in 5 or less sentences in chronological order. If there are no studies/results output none of these studies were completed with a brief explanation","b":"Summarize each and every CT or CAT scan with the diagnostic results of the CT or CAT scan, in 5 or less sentences in chronological order.","c":"Summarize each and every X-Rays with the diagnostic results of the X-Rays, in 5 or less sentences in chronological order.","d":"Summarize each and every Ultra Sound with the diagnostic results of the Ultra Sound, in 5 or less sentences in chronological order.","e":"Summarize each and every electro diagnostics (also including EMG, NCV, or NCS) with the diagnostic results of the electro diagnostics (also including EMG, NCV, or NCS), in 5 or less sentences in chronological order."},"17. Doctors Notes":{"a":"Summarize every individual dated note in about 7 sentences each, with the date first in chronological order."},"20. Diagnostic impressions":{"a":{"template":"Look through all the medical records and identify the diagnostic impressions for {body_part}","variable":"Applicant Attorney Alleged Body Parts"}},"21. Causation":{"a":"Evaluate how and why this patients injury would be related to a specific injury at work","b":"Evaluate how and why this patients injury is secondary to cumulative trauma at work"},"22. Impairment":{"a":{"template":"For {body_part} go to the AMA 5th addition guidelines, find the appropriate impairment rating, and give a detailed description on how and why it has that impairment rating.","variable":"Applicant Attorney Alleged Body Parts"}},"23. Periods Of Total Disability":{"a":{"template":"For {body_part} explain how much time the average American would have to be completely off of work before they are transitioned to light duty.","variable":"Applicant Attorney Alleged Body Parts"}},"24. Future Medical Care":{"a":{"template":"For {body_part} define what future medical care would be needed according to the MTUS and ODG guidelines that would help cure or relieve current symptoms or future exacerbations.","variable":"Applicant Attorney Alleged Body Parts"}}}}</script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         class PDFProcessor {
@@ -321,6 +496,8 @@
                 this.initializeElements();
                 this.setupEventListeners();
                 this.currentFile = null;
+                this.hasServerPDF = false;
+                this.serverFileName = null;
             }
 
             initializeElements() {
@@ -338,6 +515,8 @@
                 this.resultsContainer = document.getElementById('resultsContainer');
                 this.variablesDisplay = document.getElementById('variablesDisplay');
                 this.resultsPreview = document.getElementById('resultsPreview');
+                this.detailedResults = document.getElementById('detailedResults');
+                this.toggleDetailedView = document.getElementById('toggleDetailedView');
                 this.verbosity = document.getElementById('verbosity');
                 this.loadingOverlay = document.getElementById('loadingOverlay');
                 this.overlayMessage = document.getElementById('overlayMessage');
@@ -354,12 +533,19 @@
                 this.variablesEditor = document.getElementById('variablesEditor');
                 this.variablesPalette = document.getElementById('variablesPalette');
                 this.previewBox = document.getElementById('previewBox');
+                this.singleRunOutput = document.getElementById('singleRunOutput');
                 this.toggleAdvancedBtn = document.getElementById('toggleAdvanced');
                 this.resetPromptsBtn = document.getElementById('resetPrompts');
                 this.savePromptsBtn = document.getElementById('savePrompts');
                 this.loadPromptsFile = document.getElementById('loadPromptsFile');
                 this.runWithPromptsBtn = document.getElementById('runWithPrompts');
                 this.addSectionBtn = document.getElementById('addSectionBtn');
+                // Chat UI
+                this.chatMessages = document.getElementById('chatMessages');
+                this.chatInput = document.getElementById('chatInput');
+                this.chatSend = document.getElementById('chatSend');
+                this.chatReset = document.getElementById('chatReset');
+                this.chatThreadInfo = document.getElementById('chatThreadInfo');
             }
 
             setupEventListeners() {
@@ -392,9 +578,38 @@
                 // Tabs
                 this.tabWorkflowBtn.addEventListener('click', () => this.switchTab('workflow'));
                 this.tabPromptsBtn.addEventListener('click', () => this.switchTab('prompts'));
+                
+                // Detailed view toggle
+                this.toggleDetailedView.addEventListener('click', () => {
+                    const isDetailed = this.detailedResults.style.display !== 'none';
+                    if (isDetailed) {
+                        this.detailedResults.style.display = 'none';
+                        this.resultsPreview.style.display = 'block';
+                        this.toggleDetailedView.innerHTML = '<i class="fas fa-eye me-1"></i>Show Detailed View';
+                    } else {
+                        this.detailedResults.style.display = 'block';
+                        this.resultsPreview.style.display = 'none';
+                        this.toggleDetailedView.innerHTML = '<i class="fas fa-eye-slash me-1"></i>Show Preview';
+                        this.displayDetailedResults();
+                    }
+                });
 
                 // Resize editors on window resize
                 window.addEventListener('resize', () => this.autosizeAllEditors && this.autosizeAllEditors());
+
+                // Chat handlers
+                if (this.chatSend && this.chatInput) {
+                    this.chatSend.addEventListener('click', () => this.sendChat());
+                    this.chatInput.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            this.sendChat();
+                        }
+                    });
+                }
+                if (this.chatReset) {
+                    this.chatReset.addEventListener('click', () => this.resetChat());
+                }
             }
 
             handleDragOver(e) {
@@ -432,6 +647,8 @@
                         <p class="text-muted">${(file.size / 1024 / 1024).toFixed(2)} MB</p>
                     `;
                     this.ensurePromptsLoaded();
+                    // Automatically upload the file after selection
+                    this.uploadPDF();
                 }
             }
 
@@ -446,6 +663,38 @@
 
             hideOverlay() {
                 this.loadingOverlay.style.display = 'none';
+            }
+
+            async checkServerStatus(initializeUI = false) {
+                try {
+                    const res = await fetch('/api/status');
+                    if (!res.ok) return;
+                    const s = await res.json();
+                    this.hasServerPDF = !!s.has_pdf;
+                    this.serverFileName = s.file_name || this.serverFileName;
+                    this.chatThreadId = s.chat_thread_id || this.chatThreadId || null;
+                    this.updateChatThreadInfo();
+                    if (initializeUI && this.hasServerPDF) {
+                        this.processBtn.disabled = false;
+                        this.generateBtn.disabled = false;
+                        this.cleanupBtn.disabled = false;
+                        this.startBtn.disabled = false;
+                        const name = s.file_name || 'existing PDF';
+                        this.updateStatus('Ready: using ' + name, 'idle');
+                        this.uploadArea.innerHTML = `
+                            <i class="fas fa-file-pdf fa-3x text-success mb-3"></i>
+                            <h5>${this.escape(name)}</h5>
+                            <p class="text-muted">Previously uploaded on server</p>
+                        `;
+                    }
+                } catch (e) {
+                    // ignore
+                } finally {
+                    if (initializeUI) {
+                        this.startBtn.disabled = !(this.hasServerPDF || this.currentFile);
+                        this.uploadBtn.disabled = !this.currentFile;
+                    }
+                }
             }
 
             async updateVerbosity() {
@@ -488,6 +737,8 @@
                         this.processBtn.disabled = false;
                         this.generateBtn.disabled = false;
                         this.cleanupBtn.disabled = false;
+                        this.hasServerPDF = true;
+                        this.serverFileName = this.currentFile ? this.currentFile.name : this.serverFileName;
                         this.showAlert('PDF uploaded to OpenAI File Search successfully!', 'success');
                         
                         // Show vector store info
@@ -495,6 +746,8 @@
                             this.showAlert(`Vector Store ID: ${result.vector_store_id}`, 'info');
                         }
                         this.ensurePromptsLoaded();
+                        // Refresh status to pick up assistant/thread ids
+                        await this.checkServerStatus(false);
                     } else {
                         throw new Error(result.error || 'Upload failed');
                     }
@@ -506,11 +759,87 @@
                 }
             }
 
-            async startProcessingFlow() {
-                if (!this.currentFile) {
-                    this.showAlert('Please select a PDF first.', 'warning');
-                    return;
+            // --- Chat UI Logic ---
+            updateChatThreadInfo() {
+                if (!this.chatThreadInfo) return;
+                if (this.chatThreadId) {
+                    this.chatThreadInfo.textContent = 'Thread: ' + this.chatThreadId;
+                } else {
+                    this.chatThreadInfo.textContent = '';
                 }
+            }
+
+            appendChat(role, text) {
+                if (!this.chatMessages) return;
+                const container = document.createElement('div');
+                container.className = 'mb-2';
+                const who = document.createElement('div');
+                who.className = 'fw-bold ' + (role === 'user' ? 'text-primary' : 'text-success');
+                who.textContent = role === 'user' ? 'You' : 'Assistant';
+                const body = document.createElement('div');
+                body.innerHTML = this.renderMarkdown(this.stripInlineSourceMarkers(String(text || '')));
+                container.appendChild(who);
+                container.appendChild(body);
+                this.chatMessages.appendChild(container);
+                this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+            }
+
+            async sendChat() {
+                try {
+                    await this.checkServerStatus(false);
+                    if (!this.hasServerPDF) { this.showAlert('Upload a PDF first.', 'warning'); return; }
+                    const msg = (this.chatInput && this.chatInput.value || '').trim();
+                    if (!msg) return;
+                    this.appendChat('user', msg);
+                    if (this.chatInput) this.chatInput.value = '';
+                    // Show typing indicator and disable input
+                    const typing = document.getElementById('chatTyping');
+                    if (typing) typing.classList.remove('d-none');
+                    if (this.chatInput) this.chatInput.disabled = true;
+                    if (this.chatSend) this.chatSend.disabled = true;
+                    if (this.chatReset) this.chatReset.disabled = true;
+                    const res = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: msg })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Chat failed');
+                    this.chatThreadId = data.threadId || this.chatThreadId || null;
+                    this.updateChatThreadInfo();
+                    const ans = data.answer || {};
+                    const text = (typeof ans === 'object' && 'text' in ans) ? ans.text : (typeof ans === 'string' ? ans : this.coerceJsonToText(ans));
+                    this.appendChat('assistant', text);
+                } catch (e) {
+                    this.showAlert('Error: ' + e.message, 'danger');
+                } finally {
+                    // Hide typing indicator and re-enable input
+                    const typing = document.getElementById('chatTyping');
+                    if (typing) typing.classList.add('d-none');
+                    if (this.chatInput) this.chatInput.disabled = false;
+                    if (this.chatSend) this.chatSend.disabled = false;
+                    if (this.chatReset) this.chatReset.disabled = false;
+                    if (this.chatInput) this.chatInput.focus();
+                }
+            }
+
+            async resetChat() {
+                try {
+                    // Ask backend to reset by sending reset: true with a no-op message
+                    const res = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: 'Reset conversation', reset: true })
+                    });
+                    await res.json().catch(() => ({}));
+                } catch {}
+                this.chatThreadId = null;
+                this.updateChatThreadInfo();
+                if (this.chatMessages) this.chatMessages.innerHTML = '';
+            }
+
+            async startProcessingFlow() {
+                await this.checkServerStatus(false);
 
                 // Disable controls during flow
                 const controls = [this.uploadBtn, this.processBtn, this.generateBtn, this.cleanupBtn, this.startBtn, this.verbosity];
@@ -519,18 +848,24 @@
                 this.startBtnLoading.classList.remove('d-none');
 
                 try {
-                    // Step 1: Upload
-                    this.showOverlay('Uploading PDF...');
-                    const formData = new FormData();
-                    formData.append('pdf', this.currentFile);
-                    formData.append('verbosity', this.verbosity.value);
-
-                    let response = await fetch('/upload', { method: 'POST', body: formData });
-                    if (!response.ok) {
-                        const err = await response.json();
-                        throw new Error(err.error || 'Upload failed');
+                    let response;
+                    // Step 1: Upload only if no server PDF is present
+                    if (this.currentFile && !this.hasServerPDF) {
+                        this.showOverlay('Uploading PDF...');
+                        const formData = new FormData();
+                        formData.append('pdf', this.currentFile);
+                        formData.append('verbosity', this.verbosity.value);
+                        response = await fetch('/upload', { method: 'POST', body: formData });
+                        if (!response.ok) {
+                            const err = await response.json();
+                            throw new Error(err.error || 'Upload failed');
+                        }
+                        this.hasServerPDF = true;
+                        this.updateStatus('PDF uploaded successfully', 'complete');
+                    } else if (!this.hasServerPDF) {
+                        this.showAlert('Please upload a PDF first.', 'warning');
+                        return;
                     }
-                    this.updateStatus('PDF uploaded successfully', 'complete');
 
                     // Step 2: Process with current prompts
                     this.updateOverlay('Processing with your prompts...');
@@ -587,6 +922,12 @@
                 this.showProgress(30);
 
                 try {
+                    await this.checkServerStatus(false);
+                    if (!this.hasServerPDF) {
+                        this.showAlert('Please upload a PDF first.', 'warning');
+                        this.updateStatus('Awaiting upload', 'idle');
+                        return;
+                    }
                     await this.ensurePromptsLoaded();
                     const response = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompts: this.currentPrompts }) });
                     const result = await response.json();
@@ -661,6 +1002,7 @@
                         this.processBtn.disabled = true;
                         this.generateBtn.disabled = true;
                         this.cleanupBtn.disabled = true;
+                        this.hasServerPDF = false;
                         this.resultsContainer.style.display = 'none';
                         this.showAlert('Resources cleaned up successfully!', 'success');
                         
@@ -672,6 +1014,7 @@
                         `;
                         this.currentFile = null;
                         this.uploadBtn.disabled = true;
+                        this.startBtn.disabled = true;
                         this.pdfFile.value = '';
                     } else {
                         throw new Error(result.error || 'Cleanup failed');
@@ -681,6 +1024,47 @@
                     this.showAlert('Error: ' + error.message, 'danger');
                 } finally {
                     setTimeout(() => this.hideProgress(), 2000);
+                }
+            }
+
+            formatCitations(citations) {
+                // Hide sources for now - return empty string
+                return '';
+                
+                // Original code commented out:
+                // if (!citations || !Array.isArray(citations) || citations.length === 0) {
+                //     return '';
+                // }
+                // 
+                // return citations.map((citation, index) => {
+                //     const pages = citation.pages && citation.pages.length > 0 ? 
+                //         citation.pages.join(', ') : 'n/a';
+                //     const quote = citation.quote ? this.stripInlineSourceMarkers(String(citation.quote)).trim() : '';
+                //     const fileLabel = this.serverFileName ? this.serverFileName : 'uploaded PDF';
+                //     
+                //     return `
+                //         <div class="citation-item">
+                //             <div class="citation-header">
+                //                 <span class="citation-number">[${index + 1}]</span>
+                //                 <span class="citation-source">Source: Page ${pages} in ${this.escape(fileLabel)}</span>
+                //             </div>
+                //             ${quote ? `<div class="citation-quote">"${this.escape(quote)}"</div>` : ''}
+                //         </div>
+                //     `;
+                // }).join('');
+            }
+
+            // Remove inline source markers like  or [4:2†source]
+            stripInlineSourceMarkers(text) {
+                try {
+                    let out = String(text || '');
+                    // Fullwidth brackets pattern
+                    out = out.replace(/[【\[]\d+(?::\d+)?\s*†?source[】\]]/gi, '');
+                    // Sometimes models emit just 【source】
+                    out = out.replace(/[【\[]\s*source\s*[】\]]/gi, '');
+                    return out.trim();
+                } catch {
+                    return String(text || '');
                 }
             }
 
@@ -719,6 +1103,13 @@
                     for (const [qId, answer] of Object.entries(questions)) {
                         if (typeof answer === 'string') {
                             resultsHtml += `<div><em>${qId}:</em> ${answer.substring(0, 150)}${answer.length > 150 ? '...' : ''}</div>`;
+                        } else if (answer && typeof answer === 'object' && answer.text) {
+                            // Handle answers with citations
+                            const textPreview = answer.text.substring(0, 150);
+                            const hasMore = answer.text.length > 150;
+                            // Hide citation count for now
+                            // const citationCount = answer.citations ? answer.citations.length : 0;
+                            resultsHtml += `<div><em>${qId}:</em> ${textPreview}${hasMore ? '...' : ''}</div>`;
                         } else {
                             resultsHtml += `<div><em>${qId}:</em> [Multiple body part responses]</div>`;
                         }
@@ -733,6 +1124,71 @@
                 }
                 
                 this.resultsPreview.innerHTML = resultsHtml;
+            }
+
+            displayDetailedResults() {
+                if (!this.lastResults) {
+                    this.detailedResults.innerHTML = '<div class="text-muted">No results available</div>';
+                    return;
+                }
+
+                let detailedHtml = '';
+                
+                for (const [section, questions] of Object.entries(this.lastResults.results)) {
+                    detailedHtml += `
+                        <div class="variable-item">
+                            <h6 class="mb-3 text-primary">${section}</h6>
+                    `;
+                    
+                    for (const [qId, answer] of Object.entries(questions)) {
+                        detailedHtml += `<div class="mb-4">`;
+                        detailedHtml += `<div class="fw-bold text-secondary mb-2">${qId}:</div>`;
+                        
+                        if (typeof answer === 'string') {
+                            // Simple string answer (render markdown)
+                            detailedHtml += this.renderMarkdown(answer);
+                        } else if (answer && typeof answer === 'object' && answer.text) {
+                            // Answer with citations
+                            detailedHtml += this.renderMarkdown(answer.text);
+                            
+                            // Hide sources for now
+                            // if (answer.citations && answer.citations.length > 0) {
+                            //     detailedHtml += `<div class="citations-section">`;
+                            //     detailedHtml += `<div class="small text-muted mb-2"><i class="fas fa-quote-left me-1"></i>Sources:</div>`;
+                            //     detailedHtml += this.formatCitations(answer.citations);
+                            //     detailedHtml += `</div>`;
+                            // }
+                        } else if (answer && typeof answer === 'object') {
+                            // Variable-based answers (multiple body parts)
+                            for (const [bodyPart, bodyPartAnswer] of Object.entries(answer)) {
+                                detailedHtml += `<div class="mb-3">`;
+                                detailedHtml += `<div class="fw-semibold text-info">${bodyPart}:</div>`;
+                                
+                                if (bodyPartAnswer && typeof bodyPartAnswer === 'object' && bodyPartAnswer.text) {
+                                    detailedHtml += this.renderMarkdown(bodyPartAnswer.text);
+                                    
+                                    // Hide sources for now
+                                    // if (bodyPartAnswer.citations && bodyPartAnswer.citations.length > 0) {
+                                    //     detailedHtml += `<div class="citations-section">`;
+                                    //     detailedHtml += `<div class="small text-muted mb-2"><i class="fas fa-quote-left me-1"></i>Sources:</div>`;
+                                    //     detailedHtml += this.formatCitations(bodyPartAnswer.citations);
+                                    //     detailedHtml += `</div>`;
+                                    // }
+                                } else {
+                                    detailedHtml += this.renderMarkdown(String(bodyPartAnswer));
+                                }
+                                
+                                detailedHtml += `</div>`;
+                            }
+                        }
+                        
+                        detailedHtml += `</div>`;
+                    }
+                    
+                    detailedHtml += `</div>`;
+                }
+                
+                this.detailedResults.innerHTML = detailedHtml;
             }
 
             updateStatus(message, type) {
@@ -927,25 +1383,34 @@
                 const questions = this.currentPrompts.questions || {};
                 let html = '';
                 for (const [section, qs] of Object.entries(questions)) {
-                    html += `<div class=\"mb-2 d-flex justify-content-between align-items-center\"><strong>${section}</strong><button class=\"btn btn-sm btn-outline-secondary\" data-add-prompt=\"${this.escape(section)}\"><i class=\"fas fa-plus me-1\"></i>Add Prompt</button></div>`;
+                    html += `<div class="mb-2 d-flex justify-content-between align-items-center"><strong>${section}</strong><button class="btn btn-sm btn-outline-secondary" data-add-prompt="${this.escape(section)}"><i class="fas fa-plus me-1"></i>Add Prompt</button></div>`;
                     for (const [qid, val] of Object.entries(qs)) {
                         if (typeof val === 'string') {
+                            const ds = this.escape(section);
+                            const dq = this.escape(qid);
                             html += `
-                                <div class=\"mb-3\">
-                                    <label class=\"form-label small fw-bold\">${qid}</label>
-                                    <textarea class=\"template-textarea\" data-section=\"${this.escape(section)}\" data-qid=\"${this.escape(qid)}\">${this.escape(val)}</textarea>
-                                    <div class=\"small-hint\"></div>
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <label class="form-label small fw-bold mb-1">${dq}</label>
+                                        <button class="btn btn-sm btn-outline-primary" data-run-simple data-section="${ds}" data-qid="${dq}"><i class="fas fa-play me-1"></i>Run Prompt</button>
+                                    </div>
+                                    <textarea class="template-textarea" data-section="${ds}" data-qid="${dq}">${this.escape(val)}</textarea>
+                                    <div class="small-hint"></div>
                                 </div>
                             `;
                         } else if (val && typeof val === 'object' && 'template' in val) {
                             const ds = this.escape(section);
                             const dq = this.escape(qid);
+                            const vname = this.escape(val.variable || '');
                             const editorHTML = this.buildTemplatedInnerHTML(val.template || '', val.variable);
                             html += `
-                                <div class=\"mb-3\">
-                                    <label class=\"form-label small fw-bold\">${qid} <span class=\"ms-1 small text-muted\">(variable)</span></label>
-                                    <div class=\"template-editor form-control form-control-sm\" contenteditable=\"true\" data-templated-editor data-section=\"${ds}\" data-qid=\"${dq}\" style=\"min-height: 38px;\">${editorHTML}</div>
-                                    <div class=\"small-hint\">Drag or edit text around the variable. The chip is locked.</div>
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <label class="form-label small fw-bold mb-1">${dq} <span class="ms-1 small text-muted">(variable)</span></label>
+                                        <button class="btn btn-sm btn-outline-primary" data-run-templated data-section="${ds}" data-qid="${dq}" data-variable-name="${vname}"><i class="fas fa-play me-1"></i>Run Prompt</button>
+                                    </div>
+                                    <div class="template-editor form-control form-control-sm" contenteditable="true" data-templated-editor data-section="${ds}" data-qid="${dq}" style="min-height: 38px;">${editorHTML}</div>
+                                    <div class="small-hint">Drag or edit text around the variable. The chip is locked.</div>
                                 </div>
                             `;
                         }
@@ -1017,6 +1482,25 @@
                 this.guidedEditor.querySelectorAll('button[data-add-prompt]').forEach(btn => {
                     btn.addEventListener('click', () => this.addPrompt(btn.getAttribute('data-add-prompt')));
                 });
+                // Attach run buttons (simple)
+                this.guidedEditor.querySelectorAll('button[data-run-simple]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const container = btn.closest('.mb-3');
+                        const ta = container ? container.querySelector('textarea[data-section]') : null;
+                        const prompt = ta ? ta.value : '';
+                        this.runSinglePromptSimple(prompt);
+                    });
+                });
+                // Attach run buttons (templated)
+                this.guidedEditor.querySelectorAll('button[data-run-templated]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const container = btn.closest('.mb-3');
+                        const ed = container ? container.querySelector('[data-templated-editor]') : null;
+                        const variableName = btn.getAttribute('data-variable-name') || '';
+                        const template = ed ? this.serializeTemplatedEditor(ed) : '';
+                        this.runSinglePromptTemplated(template, variableName);
+                    });
+                });
             }
 
             renderVariablesEditor() {
@@ -1057,7 +1541,7 @@
             buildTemplatedInnerHTML(template, variableName) {
                 const token = '{body_part}';
                 const parts = (template || '').split(token);
-                const chip = `<span class=\"var-chip fixed\" data-token=\"body_part\" contenteditable=\"false\">{${this.escape(variableName || 'Variable')}}</span>`;
+                const chip = `<span class="var-chip fixed" data-token="body_part" contenteditable="false">{${this.escape(variableName || 'Variable')}}</span>`;
                 return parts.map(p => this.escape(p)).join(chip);
             }
 
@@ -1266,10 +1750,8 @@
 
             async runWithPrompts() {
                 try {
-                    if (!this.currentFile) {
-                        this.showAlert('Upload a PDF first.', 'warning');
-                        return;
-                    }
+                    await this.checkServerStatus(false);
+                    if (!this.hasServerPDF) { this.showAlert('Upload a PDF first.', 'warning'); return; }
                     this.showOverlay('Running with your prompts...');
                     const response = await fetch('/api/run', {
                         method: 'POST',
@@ -1294,6 +1776,199 @@
                     this.showAlert('Error: ' + e.message, 'danger');
                 } finally {
                     this.hideOverlay();
+                }
+            }
+
+            async runSinglePromptSimple(prompt) {
+                try {
+                    await this.checkServerStatus(false);
+                    console.log('hasServerPDF:', this.hasServerPDF);
+                    
+                    // Get detailed server status
+                    const statusRes = await fetch('/api/status');
+                    const statusData = await statusRes.json();
+                    
+                    if (!this.hasServerPDF) { 
+                        console.log('No PDF uploaded, showing alert');
+                        this.showAlert('Please upload a PDF first by dragging and dropping it into the upload area.', 'warning'); 
+                        return; 
+                    }
+                    
+                    // Check if PDF is still processing
+                    if (statusData.has_pdf && !statusData.assistant_id) {
+                        this.showAlert('PDF is still being processed. Please wait a moment and try again.', 'info');
+                        return;
+                    }
+                    
+                    if (!prompt || !prompt.trim()) { this.showAlert('Prompt is empty.', 'warning'); return; }
+                    this.showOverlay('Running prompt...');
+                    this.showLoadingInOutput();
+                    const response = await fetch('/api/run-one', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ type: 'simple', prompt })
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || 'Run failed');
+                    this.showSingleRunResult(result);
+                } catch (e) {
+                    this.showAlert('Error: ' + e.message, 'danger');
+                    this.hideLoadingInOutput();
+                } finally {
+                    this.hideOverlay();
+                    this.hideLoadingInOutput();
+                }
+            }
+
+            async runSinglePromptTemplated(template, variableName) {
+                try {
+                    await this.checkServerStatus(false);
+                    
+                    // Get detailed server status
+                    const statusRes = await fetch('/api/status');
+                    const statusData = await statusRes.json();
+                    
+                    if (!this.hasServerPDF) { 
+                        this.showAlert('Please upload a PDF first by dragging and dropping it into the upload area.', 'warning'); 
+                        return; 
+                    }
+                    
+                    // Check if PDF is still processing
+                    if (statusData.has_pdf && !statusData.assistant_id) {
+                        this.showAlert('PDF is still being processed. Please wait a moment and try again.', 'info');
+                        return;
+                    }
+                    
+                    if (!template || !variableName) { this.showAlert('Template or variable missing.', 'warning'); return; }
+                    this.showOverlay('Running prompt...');
+                    this.showLoadingInOutput();
+                    await this.ensurePromptsLoaded();
+                    const response = await fetch('/api/run-one', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ type: 'templated', template, variableName, variablesPrompts: this.currentPrompts.variablesPrompts || {} })
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || 'Run failed');
+                    this.showSingleRunResult(result);
+                } catch (e) {
+                    this.showAlert('Error: ' + e.message, 'danger');
+                    this.hideLoadingInOutput();
+                } finally {
+                    this.hideOverlay();
+                    this.hideLoadingInOutput();
+                }
+            }
+
+            showLoadingInOutput() {
+                if (!this.singleRunOutput) return;
+                const loadingText = `
+🔄 **Processing your prompt...**
+
+Progress: ████████████████████████████████████████ 100%
+
+Please wait while we analyze your document...
+                `;
+                if (typeof marked !== 'undefined') {
+                    this.singleRunOutput.innerHTML = marked.parse(loadingText);
+                } else {
+                    this.singleRunOutput.textContent = loadingText;
+                }
+            }
+
+            hideLoadingInOutput() {
+                if (!this.singleRunOutput) return;
+                // No need to disable since it's a div now
+            }
+
+            showSingleRunResult(payload) {
+                try {
+                    if (!this.singleRunOutput) return;
+
+                    const renderAnswer = (rawText, citations) => {
+                        const cleaned = this.stripInlineSourceMarkers(rawText || '');
+                        const bodyHtml = this.renderMarkdown(cleaned);
+                        // Hide sources for now
+                        const citesHtml = '';
+                        return bodyHtml + citesHtml;
+                    };
+
+                    let html = '';
+                    if (payload && payload.kind === 'simple') {
+                        const r = payload.result || payload;
+                        // Prefer natural text; if backend accidentally returns a JSON object with only scalar fields, coerce to readable text
+                        const text = (r && typeof r === 'object' && 'text' in r)
+                            ? String(r.text || '')
+                            : (typeof r === 'string' ? r : this.coerceJsonToText(r));
+                        const citations = (r && typeof r === 'object' && Array.isArray(r.citations)) ? r.citations : [];
+                        html = renderAnswer(text, citations);
+                    } else if (payload && payload.kind === 'templated') {
+                        const obj = payload.resultsByValue || {};
+                        const sections = [];
+                        for (const [val, r] of Object.entries(obj)) {
+                            const text = (r && typeof r === 'object' && 'text' in r)
+                                ? String(r.text || '')
+                                : (typeof r === 'string' ? r : this.coerceJsonToText(r));
+                            const citations = (r && typeof r === 'object' && Array.isArray(r.citations)) ? r.citations : [];
+                            sections.push(`
+                                <div class=\"mb-4\">
+                                    <div class=\"fw-bold text-secondary mb-2\">${this.escape(val)}:</div>
+                                    ${renderAnswer(text, citations)}
+                                </div>
+                            `);
+                        }
+                        html = sections.join('');
+                    } else {
+                        // Unknown shape; attempt to coerce to readable text first
+                        html = this.renderMarkdown(this.coerceJsonToText(payload));
+                    }
+
+                    this.singleRunOutput.innerHTML = html;
+                } catch (e) {
+                    console.error('Error rendering output:', e);
+                    this.singleRunOutput.textContent = JSON.stringify(payload || {}, null, 2);
+                }
+            }
+
+            // Convert markdown into safe HTML so **bold** and headings render
+            renderMarkdown(text) {
+                try {
+                    const md = String(text || '').trim();
+                    if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+                        const html = marked.parse(md, { mangle: false, headerIds: false });
+                        const safe = DOMPurify.sanitize(html);
+                        return `<div class="answer-text">${safe}</div>`;
+                    }
+                    // Fallback
+                    return `<div class="answer-text">${this.escape(md).replace(/\n/g, '<br/>')}</div>`;
+                } catch {
+                    return `<div class="answer-text">${this.escape(String(text || ''))}</div>`;
+                }
+            }
+
+            // Convert plain objects/arrays that look like accidental JSON outputs into readable text
+            coerceJsonToText(value) {
+                try {
+                    if (value == null) return '';
+                    if (typeof value === 'string') return value;
+                    if (Array.isArray(value)) {
+                        // Render arrays as bullet list text
+                        return value.map(v => `- ${typeof v === 'string' ? v : this.coerceJsonToText(v)}`).join('\n');
+                    }
+                    if (typeof value === 'object') {
+                        // If it looks like an answer object, try to grab text
+                        if ('text' in value && typeof value.text === 'string') return value.text;
+                        // Otherwise render key: value lines
+                        const lines = [];
+                        for (const [k, v] of Object.entries(value)) {
+                            if (k === 'citations') continue;
+                            lines.push(`${k}: ${typeof v === 'string' ? v : this.coerceJsonToText(v)}`);
+                        }
+                        return lines.join('\n');
+                    }
+                    return String(value);
+                } catch {
+                    try { return JSON.stringify(value, null, 2); } catch { return String(value || ''); }
                 }
             }
 
@@ -1391,6 +2066,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             const app = new PDFProcessor();
             app.ensurePromptsLoaded();
+            app.checkServerStatus(true);
         });
     </script>
 </body>
