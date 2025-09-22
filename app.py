@@ -771,7 +771,9 @@ def index():
             prompts_data = json.load(f)
     except Exception:
         prompts_data = {}
-    return render_template('index.html', prompts_json=json.dumps(prompts_data))
+    # Allow frontend to call an external backend (e.g., Render) when set
+    api_base_url = os.getenv('API_BASE_URL', '')
+    return render_template('index.html', prompts_json=json.dumps(prompts_data), api_base_url=api_base_url)
 
 @app.route('/upload', methods=['POST'])
 def upload_pdf():
