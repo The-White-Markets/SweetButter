@@ -4,6 +4,7 @@ A comprehensive application for processing medical legal PDFs using **OpenAI's F
 
 ## Features
 
+- **Multi-User Support**: Session-based isolation ensures each user gets their own instance
 - **OpenAI File Search Integration**: Upload PDFs directly to OpenAI's vector stores
 - **Automatic Chunking & Embedding**: OpenAI handles text extraction, chunking, and embedding
 - **AI-Powered Variable Extraction**: Automatically identify key variables like body parts, injuries, etc.
@@ -13,6 +14,7 @@ A comprehensive application for processing medical legal PDFs using **OpenAI's F
 - **Configurable Verbosity**: Choose between brief, detailed, or comprehensive responses
 - **Modern Web Interface**: Beautiful, responsive UI with drag-and-drop functionality
 - **Resource Management**: Built-in cleanup functionality for OpenAI resources
+- **Concurrent User Support**: Multiple users can access the application simultaneously without interference
 
 ## Setup Instructions
 
@@ -30,11 +32,14 @@ Create a `.env` file in the project root:
 cp env_example.txt .env
 ```
 
-Edit the `.env` file and add your OpenAI API key:
+Edit the `.env` file and add your OpenAI API key and secret key:
 
 ```
 OPENAI_API_KEY=your_actual_api_key_here
+SECRET_KEY=your_secret_key_here_for_sessions
 ```
+
+**Note**: The `SECRET_KEY` is used for session management to ensure user isolation. Generate a random string for production use.
 
 **Note**: This application uses OpenAI's File Search with vector stores, which requires a paid OpenAI account. Vector stores incur storage costs ($0.10 per GB per day after the first 1GB free).
 
@@ -55,6 +60,26 @@ python app_1789.py
 Then open your browser and go to:
 - http://localhost:1776 (for port 1776)
 - http://localhost:1789 (for port 1789)
+
+## Multi-User Support
+
+This application now supports multiple concurrent users through session-based isolation:
+
+- **Session Management**: Each user gets a unique session ID stored in browser cookies
+- **Isolated Processors**: Each user has their own `PDFProcessor` instance
+- **Resource Isolation**: Users' OpenAI resources (vector stores, assistants, files) are completely separate
+- **Concurrent Access**: Multiple users can upload different PDFs and process them simultaneously
+- **Automatic Cleanup**: Users can clean up their own resources without affecting others
+
+### Testing Multi-User Support
+
+Run the test script to verify user isolation:
+
+```bash
+python test_user_isolation.py
+```
+
+This will simulate 4 concurrent users and verify that each gets their own isolated instance.
 
 ## How It Works
 
@@ -143,7 +168,10 @@ You can easily modify:
 - `POST /process` - Process PDF using file search and extract information
 - `POST /generate-report` - Generate and download PDF report
 - `POST /set-verbosity` - Set response verbosity level
-- `POST /cleanup` - Clean up OpenAI resources (vector stores, assistants, files)
+- `POST /cleanup` - Clean up OpenAI resources for current user
+- `GET /api/status` - Get current user's processing status
+- `GET /api/session-info` - Get current user's session information
+- `POST /api/cleanup-all` - Clean up resources for all users (admin function)
 
 ## File Structure
 
