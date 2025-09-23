@@ -1,1 +1,5 @@
 OPENAI_API_KEY=your_openai_api_key_here
+<<<<<<< Current (Your changes)
+=======
+SECRET_KEY=your_secret_key_here_for_sessions
+>>>>>>> Incoming (Background Agent changes)

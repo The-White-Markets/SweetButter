@@ -1,7 +1,9 @@
 import os
 import json
 import logging
-from flask import Flask, request, jsonify, render_template, send_file
+import secrets
+import uuid
+from flask import Flask, request, jsonify, render_template, send_file, session
 from flask_cors import CORS
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -24,12 +26,46 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
+# Configure session management for user isolation
+app.secret_key = os.getenv('SECRET_KEY', secrets.token_hex(16))
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
+# User processor management for session isolation
+user_processors = {}
+
+def get_user_processor():
+    """Get or create a processor instance for the current user session"""
+    if 'user_id' not in session:
+        session['user_id'] = str(uuid.uuid4())
+        logger.info(f"Created new user session: {session['user_id']}")
+    
+    user_id = session['user_id']
+    if user_id not in user_processors:
+        user_processors[user_id] = PDFProcessor()
+        logger.info(f"Created new processor for user: {user_id}")
+    
+    return user_processors[user_id]
+
+def cleanup_user_processor(user_id):
+    """Clean up resources for a specific user"""
+    if user_id in user_processors:
+        try:
+            user_processors[user_id].cleanup_resources()
+            logger.info(f"Cleaned up resources for user: {user_id}")
+        except Exception as e:
+            logger.error(f"Error cleaning up user {user_id}: {str(e)}")
+        finally:
+            del user_processors[user_id]
+            logger.info(f"Removed processor for user: {user_id}")
 
 class PDFProcessor:
     def __init__(self):
@@ -758,8 +794,7 @@ class PDFProcessor:
             self.variables = {}
             self._pages_cache = {}
 
-# Initialize processor
-processor = PDFProcessor()
+# Note: Global processor removed - now using session-based processors
 
 @app.route('/')
 def index():
@@ -785,6 +820,9 @@ def upload_pdf():
         if pdf_file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
         
+        # Get user-specific processor
+        processor = get_user_processor()
+        
         # Set verbosity if provided
         verbosity = request.form.get('verbosity', 'detailed')
         processor.verbosity = verbosity
@@ -797,7 +835,8 @@ def upload_pdf():
         return jsonify({
             'message': 'PDF uploaded successfully to OpenAI File Search',
             'vector_store_id': processor.vector_store_id,
-            'assistant_id': processor.assistant_id
+            'assistant_id': processor.assistant_id,
+            'user_id': session.get('user_id', 'unknown')
         })
     
     except Exception as e:
@@ -807,6 +846,9 @@ def upload_pdf():
 @app.route('/process', methods=['POST'])
 def process_pdf():
     try:
+        # Get user-specific processor
+        processor = get_user_processor()
+        
         if not processor.vector_store_id:
             return jsonify({'error': 'No PDF uploaded'}), 400
         
@@ -818,7 +860,8 @@ def process_pdf():
         
         return jsonify({
             'variables': variables,
-            'results': results
+            'results': results,
+            'user_id': session.get('user_id', 'unknown')
         })
     
     except Exception as e:
@@ -828,6 +871,9 @@ def process_pdf():
 @app.route('/generate-report', methods=['POST'])
 def generate_report():
     try:
+        # Get user-specific processor
+        processor = get_user_processor()
+        
         # Allow direct PDF generation from provided results to support custom prompts
         req_json = None
         try:
@@ -851,7 +897,8 @@ def generate_report():
         pdf_buffer = processor.generate_pdf_report(results)
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f'medical_report_{timestamp}.pdf'
+        user_id = session.get('user_id', 'unknown')[:8]  # Use first 8 chars of user ID
+        filename = f'medical_report_{user_id}_{timestamp}.pdf'
         
         return send_file(
             pdf_buffer,
@@ -916,6 +963,9 @@ def get_variables_pallete():
 def api_status():
     """Report current server-side processing state so the UI can reuse uploaded PDFs."""
     try:
+        # Get user-specific processor
+        processor = get_user_processor()
+        
         has_pdf = bool(getattr(processor, 'vector_store_id', None))
         return jsonify({
             'has_pdf': has_pdf,
@@ -925,6 +975,8 @@ def api_status():
             'file_name': getattr(processor, 'file_name', None),
             'verbosity': getattr(processor, 'verbosity', None),
             'chat_thread_id': getattr(processor, 'chat_thread_id', None),
+            'user_id': session.get('user_id', 'unknown'),
+            'active_users': len(user_processors)
         })
     except Exception as e:
         logger.error(f"Status error: {str(e)}")
@@ -933,6 +985,9 @@ def api_status():
 @app.route('/api/run', methods=['POST'])
 def run_with_custom_prompts():
     try:
+        # Get user-specific processor
+        processor = get_user_processor()
+        
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Missing JSON body'}), 400
@@ -963,7 +1018,8 @@ def run_with_custom_prompts():
             'results': results,
             'echo': {
                 'prompts': prompts
-            }
+            },
+            'user_id': session.get('user_id', 'unknown')
         })
     except Exception as e:
         logger.error(f"Run with custom prompts error: {str(e)}")
@@ -979,6 +1035,9 @@ def run_single_prompt():
     - { "type": "templated", "template": "...{body_part}...", "variableName": "Agreed Upon Body Parts", "variablesPrompts": { ... } }
     """
     try:
+        # Get user-specific processor
+        processor = get_user_processor()
+        
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Missing JSON body'}), 400
@@ -995,7 +1054,11 @@ def run_single_prompt():
             if not prompt:
                 return jsonify({'error': 'Missing prompt'}), 400
             result = processor.query_with_file_search(prompt, return_citations=True)
-            return jsonify({'kind': 'simple', 'result': result})
+            return jsonify({
+                'kind': 'simple', 
+                'result': result,
+                'user_id': session.get('user_id', 'unknown')
+            })
 
         # Templated
         template = (data.get('template') or '').strip()
@@ -1038,7 +1101,12 @@ def run_single_prompt():
             placeholder_prompt = template.replace('{body_part}', '(no variable values)')
             results_by_value['(no values)'] = processor.query_with_file_search(placeholder_prompt, return_citations=True)
 
-        return jsonify({'kind': 'templated', 'resultsByValue': results_by_value, 'variableName': variable_name})
+        return jsonify({
+            'kind': 'templated', 
+            'resultsByValue': results_by_value, 
+            'variableName': variable_name,
+            'user_id': session.get('user_id', 'unknown')
+        })
     except Exception as e:
         logger.error(f"Run single prompt error: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -1060,6 +1128,9 @@ def chat_with_context():
     }
     """
     try:
+        # Get user-specific processor
+        processor = get_user_processor()
+        
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Missing JSON body'}), 400
@@ -1088,7 +1159,8 @@ def chat_with_context():
 
         return jsonify({
             'threadId': processor.chat_thread_id,
-            'answer': result
+            'answer': result,
+            'user_id': session.get('user_id', 'unknown')
         })
     except Exception as e:
         logger.error(f"Chat error: {str(e)}")
@@ -1097,6 +1169,9 @@ def chat_with_context():
 @app.route('/set-verbosity', methods=['POST'])
 def set_verbosity():
     try:
+        # Get user-specific processor
+        processor = get_user_processor()
+        
         data = request.get_json()
         verbosity = data.get('verbosity', 'detailed')
         
@@ -1126,19 +1201,27 @@ def set_verbosity():
                 Always search through the uploaded documents to find relevant information before responding."""
             )
         
-        return jsonify({'message': f'Verbosity set to {verbosity}'})
+        return jsonify({
+            'message': f'Verbosity set to {verbosity}',
+            'user_id': session.get('user_id', 'unknown')
+        })
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/cleanup', methods=['POST'])
 def cleanup():
-    """Clean up OpenAI resources"""
+    """Clean up OpenAI resources for the current user"""
     try:
-        processor.cleanup_resources()
-        # Reset chat thread; note: Threads cannot be deleted via API, so we just drop the reference
-        processor.chat_thread_id = None
-        return jsonify({'message': 'Resources cleaned up successfully'})
+        user_id = session.get('user_id')
+        if user_id:
+            cleanup_user_processor(user_id)
+            return jsonify({
+                'message': 'Resources cleaned up successfully',
+                'user_id': user_id
+            })
+        else:
+            return jsonify({'message': 'No active session to clean up'})
     except Exception as e:
         logger.error(f"Cleanup error: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -1147,6 +1230,9 @@ def cleanup():
 def test_query():
     """Test a simple query to diagnose assistant issues"""
     try:
+        # Get user-specific processor
+        processor = get_user_processor()
+        
         if not processor.vector_store_id:
             return jsonify({'error': 'No PDF uploaded'}), 400
         
@@ -1163,7 +1249,8 @@ def test_query():
             'query': test_prompt,
             'response': response,
             'vector_store_id': processor.vector_store_id,
-            'assistant_id': processor.assistant_id
+            'assistant_id': processor.assistant_id,
+            'user_id': session.get('user_id', 'unknown')
         })
     
     except Exception as e:
@@ -1198,6 +1285,42 @@ def list_reports():
     
     except Exception as e:
         logger.error(f"List reports error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/session-info', methods=['GET'])
+def session_info():
+    """Get information about the current user session"""
+    try:
+        user_id = session.get('user_id')
+        processor = get_user_processor() if user_id else None
+        
+        return jsonify({
+            'user_id': user_id,
+            'has_pdf': bool(processor and processor.vector_store_id),
+            'active_users': len(user_processors),
+            'session_active': bool(user_id),
+            'file_name': getattr(processor, 'file_name', None) if processor else None,
+            'verbosity': getattr(processor, 'verbosity', None) if processor else None
+        })
+    except Exception as e:
+        logger.error(f"Session info error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cleanup-all', methods=['POST'])
+def cleanup_all_users():
+    """Clean up resources for all users (admin function)"""
+    try:
+        cleaned_users = []
+        for user_id in list(user_processors.keys()):
+            cleanup_user_processor(user_id)
+            cleaned_users.append(user_id)
+        
+        return jsonify({
+            'message': f'Cleaned up {len(cleaned_users)} user sessions',
+            'cleaned_users': cleaned_users
+        })
+    except Exception as e:
+        logger.error(f"Cleanup all error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
