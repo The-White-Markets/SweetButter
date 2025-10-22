@@ -78,6 +78,9 @@ class PDFProcessor:
         self.file_name = None
         self._pages_cache = {}
         self.chat_thread_id = None
+        self._cached_pages_text = None
+        # Local-only fallback support when OpenAI upload is unavailable
+        self.local_pdf_path = None
         
     def _strip_inline_markers(self, text: str) -> str:
         """Remove inline source markers like [4:5†source] or 【source】 from text."""
@@ -97,7 +100,11 @@ class PDFProcessor:
         return t
 
     def extract_pdf_text(self, pdf_file):
-        """Upload PDF to OpenAI and create vector store"""
+        """Upload PDF to OpenAI and create vector store.
+
+        Falls back to local-only mode (no OpenAI) when API key is missing/invalid
+        or any upload error occurs. In local mode, OCR via /api/ocr still works.
+        """
         try:
             # Reset file pointer to beginning
             pdf_file.seek(0)
@@ -107,6 +114,14 @@ class PDFProcessor:
                 temp_file.write(pdf_file.read())
                 temp_file_path = temp_file.name
             
+            # If no valid API key, switch to local-only mode immediately
+            api_key = (os.getenv('OPENAI_API_KEY') or '').strip()
+            if not api_key or len(api_key) < 20:
+                self.local_pdf_path = temp_file_path
+                self.file_name = getattr(pdf_file, 'filename', None) or getattr(pdf_file, 'name', None)
+                logger.warning("OPENAI_API_KEY missing/invalid; using local-only mode for OCR")
+                return True
+
             # Upload file to OpenAI
             with open(temp_file_path, 'rb') as file:
                 uploaded_file = client.files.create(
@@ -165,7 +180,16 @@ class PDFProcessor:
             return True
             
         except Exception as e:
-            logger.error(f"Error uploading PDF to OpenAI: {str(e)}")
+            # Fallback to local-only mode so OCR remains available
+            try:
+                if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
+                    self.local_pdf_path = temp_file_path
+                    self.file_name = getattr(pdf_file, 'filename', None) or getattr(pdf_file, 'name', None)
+                    logger.warning(f"OpenAI upload failed; using local-only mode for OCR. Error: {str(e)}")
+                    return True
+            except Exception:
+                pass
+            logger.error(f"Error uploading PDF to OpenAI and no local fallback available: {str(e)}")
             return False
     
     def create_assistant(self):
@@ -216,13 +240,27 @@ class PDFProcessor:
             return None
 
     def _get_file_pages(self, file_id):
-        """Download an uploaded file and return its per-page text for citation lookup."""
+        """Return per-page text for citation/OCR lookup.
+
+        Uses OpenAI file download when file_id is provided; otherwise if
+        local-only mode is active, reads from local PDF path.
+        """
         try:
-            stream = client.files.content(file_id)
-            data = stream.read()
-            doc = fitz.open(stream=data, filetype="pdf")
+            # Cache to avoid repeated downloads
+            if getattr(self, '_cached_pages_text', None) is not None:
+                return self._cached_pages_text
+            if file_id:
+                stream = client.files.content(file_id)
+                data = stream.read()
+                doc = fitz.open(stream=data, filetype="pdf")
+            else:
+                # Local-only path
+                if not self.local_pdf_path or not os.path.exists(self.local_pdf_path):
+                    return []
+                doc = fitz.open(self.local_pdf_path)
             pages = [doc[i].get_text() for i in range(doc.page_count)]
             doc.close()
+            self._cached_pages_text = pages
             return pages
         except Exception as e:
             logger.error(f"Failed to download/parse file {file_id} for citations: {e}")
@@ -232,6 +270,12 @@ class PDFProcessor:
                     stream = client.files.content(self.uploaded_file_id)
                     data = stream.read()
                     doc = fitz.open(stream=data, filetype="pdf")
+                    pages = [doc[i].get_text() for i in range(doc.page_count)]
+                    doc.close()
+                    return pages
+                # Or try local path if present
+                if getattr(self, 'local_pdf_path', None) and os.path.exists(self.local_pdf_path):
+                    doc = fitz.open(self.local_pdf_path)
                     pages = [doc[i].get_text() for i in range(doc.page_count)]
                     doc.close()
                     return pages
@@ -782,6 +826,13 @@ class PDFProcessor:
             if self.uploaded_file_id:
                 client.files.delete(self.uploaded_file_id)
                 logger.info(f"File deleted: {self.uploaded_file_id}")
+            # Remove local temporary file if present
+            if getattr(self, 'local_pdf_path', None) and os.path.exists(self.local_pdf_path):
+                try:
+                    os.unlink(self.local_pdf_path)
+                    logger.info(f"Local PDF deleted: {self.local_pdf_path}")
+                except Exception:
+                    pass
                 
         except Exception as e:
             logger.error(f"Error cleaning up resources: {str(e)}")
@@ -793,6 +844,8 @@ class PDFProcessor:
             self.file_name = None
             self.variables = {}
             self._pages_cache = {}
+            self._cached_pages_text = None
+            self.local_pdf_path = None
 
 # Note: Global processor removed - now using session-based processors
 
@@ -827,15 +880,16 @@ def upload_pdf():
         verbosity = request.form.get('verbosity', 'detailed')
         processor.verbosity = verbosity
         
-        # Upload PDF to OpenAI and create vector store
+        # Upload PDF to OpenAI and create vector store (with local fallback inside)
         success = processor.extract_pdf_text(pdf_file)
         if not success:
-            return jsonify({'error': 'Failed to upload PDF to OpenAI'}), 400
+            return jsonify({'error': 'Failed to handle PDF upload'}), 400
         
         return jsonify({
-            'message': 'PDF uploaded successfully to OpenAI File Search',
+            'message': 'PDF ready (OpenAI or local OCR mode)',
             'vector_store_id': processor.vector_store_id,
             'assistant_id': processor.assistant_id,
+            'local_mode': bool(getattr(processor, 'local_pdf_path', None)),
             'user_id': session.get('user_id', 'unknown')
         })
     
@@ -966,7 +1020,7 @@ def api_status():
         # Get user-specific processor
         processor = get_user_processor()
         
-        has_pdf = bool(getattr(processor, 'vector_store_id', None))
+        has_pdf = bool(getattr(processor, 'vector_store_id', None) or getattr(processor, 'local_pdf_path', None))
         return jsonify({
             'has_pdf': has_pdf,
             'vector_store_id': getattr(processor, 'vector_store_id', None),
@@ -975,6 +1029,7 @@ def api_status():
             'file_name': getattr(processor, 'file_name', None),
             'verbosity': getattr(processor, 'verbosity', None),
             'chat_thread_id': getattr(processor, 'chat_thread_id', None),
+            'local_mode': bool(getattr(processor, 'local_pdf_path', None)),
             'user_id': session.get('user_id', 'unknown'),
             'active_users': len(user_processors)
         })
@@ -1025,6 +1080,48 @@ def run_with_custom_prompts():
         logger.error(f"Run with custom prompts error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/ocr', methods=['GET'])
+def get_ocr_page():
+    """Return OCR/extracted text per page for the current uploaded PDF.
+
+    Query params:
+    - page: 1-based page number. If omitted, returns metadata only (total pages, file name).
+    """
+    try:
+        processor = get_user_processor()
+        if not getattr(processor, 'uploaded_file_id', None) and not getattr(processor, 'local_pdf_path', None):
+            return jsonify({'error': 'No PDF uploaded'}), 400
+
+        # Use OpenAI file when available; otherwise local path
+        pages = processor._get_file_pages(processor.uploaded_file_id or None) or []
+        total = len(pages)
+        if total == 0:
+            return jsonify({'totalPages': 0, 'fileName': getattr(processor, 'file_name', None), 'page': None, 'text': ''})
+
+        page_param = request.args.get('page')
+        if page_param is None:
+            # Metadata only
+            return jsonify({'totalPages': total, 'fileName': getattr(processor, 'file_name', None)})
+
+        try:
+            page_index = int(page_param)
+        except Exception:
+            return jsonify({'error': 'Invalid page parameter'}), 400
+
+        if page_index < 1 or page_index > total:
+            return jsonify({'error': 'Page out of range', 'totalPages': total}), 400
+
+        text = pages[page_index - 1] or ''
+        return jsonify({
+            'totalPages': total,
+            'fileName': getattr(processor, 'file_name', None),
+            'page': page_index,
+            'text': text
+        })
+    except Exception as e:
+        logger.error(f"OCR retrieval error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/run-one', methods=['POST'])
 def run_single_prompt():

@@ -2,3 +2,104 @@
  * Debug mode: on
 Address already in use
 Port 1776 is in use by another program. Either identify and stop that program, or start the server with a different port.
+ * Serving Flask app 'app'
+ * Debug mode: on
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:8080
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600
+Starting Medical Legal PDF Processor on port 1789...
+ * Serving Flask app 'app'
+ * Debug mode: on
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:1789
+ * Running on http://10.5.5.227:1789
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+INFO:werkzeug: * Restarting with stat
+Starting Medical Legal PDF Processor on port 1789...
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 12:47:44] "GET / HTTP/1.1" 200 -
+INFO:__main__:Created new user session: 7f6f275d-9e93-4f6c-9c99-59cb5b684a81
+INFO:__main__:Created new processor for user: 7f6f275d-9e93-4f6c-9c99-59cb5b684a81
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 12:47:44] "GET /api/status HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 12:47:44] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+INFO:httpx:HTTP Request: POST https://api.openai.com/v1/files "HTTP/1.1 401 Unauthorized"
+ERROR:__main__:Error uploading PDF to OpenAI: Error code: 401 - {'error': {'message': 'Incorrect API key provided: sk-proj-********************************************************************************************************************************************************5ZEA. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 12:52:36] "[31m[1mPOST /upload HTTP/1.1[0m" 400 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 12:55:01] "GET / HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 12:55:01] "GET /api/status HTTP/1.1" 200 -
+INFO:httpx:HTTP Request: POST https://api.openai.com/v1/files "HTTP/1.1 401 Unauthorized"
+ERROR:__main__:Error uploading PDF to OpenAI: Error code: 401 - {'error': {'message': 'Incorrect API key provided: sk-proj-********************************************************************************************************************************************************5ZEA. You can find your API key at https://platform.openai.com/account/api-keys.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}}
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 12:56:11] "[31m[1mPOST /upload HTTP/1.1[0m" 400 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 12:57:45] "GET / HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 12:57:45] "GET /api/status HTTP/1.1" 200 -
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+INFO:werkzeug: * Restarting with stat
+Starting Medical Legal PDF Processor on port 1789...
+WARNING:werkzeug: * Debugger is active!
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+INFO:werkzeug: * Restarting with stat
+Starting Medical Legal PDF Processor on port 1789...
+WARNING:werkzeug: * Debugger is active!
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+INFO:werkzeug: * Restarting with stat
+Starting Medical Legal PDF Processor on port 1789...
+WARNING:werkzeug: * Debugger is active!
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+INFO:werkzeug: * Restarting with stat
+Starting Medical Legal PDF Processor on port 1789...
+WARNING:werkzeug: * Debugger is active!
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+INFO:werkzeug: * Restarting with stat
+Starting Medical Legal PDF Processor on port 1789...
+WARNING:werkzeug: * Debugger is active!
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+INFO:werkzeug: * Restarting with stat
+Starting Medical Legal PDF Processor on port 1789...
+WARNING:werkzeug: * Debugger is active!
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 13:32:37] "GET / HTTP/1.1" 200 -
+INFO:__main__:Created new user session: 07f02530-96b7-42e7-97d5-858f5aae43e5
+INFO:__main__:Created new processor for user: 07f02530-96b7-42e7-97d5-858f5aae43e5
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 13:32:37] "GET /api/status HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 13:32:40] "GET / HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 13:32:40] "GET /api/status HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 14:25:49] "GET / HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 14:25:49] "GET /api/status HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 14:26:53] "GET / HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 14:26:53] "GET /api/status HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 14:40:23] "GET / HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 14:40:23] "GET /api/status HTTP/1.1" 200 -
