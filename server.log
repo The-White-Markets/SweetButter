@@ -103,3 +103,39 @@ INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 14:26:53] "GET / HTTP/1.1" 200 -
 INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 14:26:53] "GET /api/status HTTP/1.1" 200 -
 INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 14:40:23] "GET / HTTP/1.1" 200 -
 INFO:werkzeug:127.0.0.1 - - [22/Oct/2025 14:40:23] "GET /api/status HTTP/1.1" 200 -
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+INFO:werkzeug: * Restarting with stat
+Starting Medical Legal PDF Processor on port 1789...
+WARNING:werkzeug: * Debugger is active!
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+INFO:werkzeug: * Restarting with stat
+Starting Medical Legal PDF Processor on port 1789...
+WARNING:werkzeug: * Debugger is active!
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+INFO:werkzeug: * Restarting with stat
+Starting Medical Legal PDF Processor on port 1789...
+WARNING:werkzeug: * Debugger is active!
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Debugger PIN: 267-149-600
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Detected change in '/Users/noahfakheri/SweetButter-1/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+Starting Medical Legal PDF Processor on port 1789...
+INFO:werkzeug: * Debugger PIN: 267-149-600
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 267-149-600

@@ -26,6 +26,11 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
+# Configure Flask for large file uploads (up to 2GB for 5000-10,000 page PDFs)
+app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
+app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
+app.config['MAX_CONTENT_PATH'] = None
+
 # Configure session management for user isolation
 app.secret_key = os.getenv('SECRET_KEY', secrets.token_hex(16))
 app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
@@ -104,15 +109,33 @@ class PDFProcessor:
 
         Falls back to local-only mode (no OpenAI) when API key is missing/invalid
         or any upload error occurs. In local mode, OCR via /api/ocr still works.
+
+        Optimized for large files (5000-10,000 pages).
         """
         try:
             # Reset file pointer to beginning
             pdf_file.seek(0)
-            
+
+            # Get file size for logging
+            pdf_file.seek(0, 2)
+            file_size = pdf_file.tell()
+            pdf_file.seek(0)
+            file_size_mb = file_size / (1024 * 1024)
+
+            logger.info(f"Processing PDF: {file_size_mb:.2f} MB")
+
             # Create a temporary file to save the uploaded PDF
+            # Use buffered writing for large files
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
-                temp_file.write(pdf_file.read())
+                # Write in chunks for memory efficiency with large files
+                chunk_size = 8192 * 1024  # 8MB chunks
+                while True:
+                    chunk = pdf_file.read(chunk_size)
+                    if not chunk:
+                        break
+                    temp_file.write(chunk)
                 temp_file_path = temp_file.name
+                logger.info(f"PDF saved to temporary file: {temp_file_path}")
             
             # If no valid API key, switch to local-only mode immediately
             api_key = (os.getenv('OPENAI_API_KEY') or '').strip()
@@ -123,32 +146,41 @@ class PDFProcessor:
                 return True
 
             # Upload file to OpenAI
+            # For large files, this may take several minutes
+            logger.info(f"Starting upload to OpenAI (this may take several minutes for large files)...")
             with open(temp_file_path, 'rb') as file:
                 uploaded_file = client.files.create(
                     file=file,
                     purpose='assistants'
                 )
-            
+
             self.uploaded_file_id = uploaded_file.id
             self.file_name = getattr(pdf_file, 'filename', None) or getattr(pdf_file, 'name', None)
-            logger.info(f"File uploaded successfully: {self.uploaded_file_id}")
+            logger.info(f"File uploaded successfully to OpenAI: {self.uploaded_file_id} ({file_size_mb:.2f} MB)")
             
-            # Create vector store
+            # Create vector store with chunking strategy for large documents
+            logger.info("Creating vector store with optimized chunking for large documents...")
             vector_store = client.vector_stores.create(
-                name=f"Medical Legal PDF - {datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                name=f"Medical Legal PDF - {datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                chunking_strategy={
+                    "type": "auto"  # Let OpenAI optimize chunk size for large files
+                }
             )
             self.vector_store_id = vector_store.id
             logger.info(f"Vector store created: {self.vector_store_id}")
-            
+
             # Add file to vector store
+            logger.info(f"Adding file to vector store (processing may take several minutes for large files)...")
             client.vector_stores.files.create(
                 vector_store_id=self.vector_store_id,
                 file_id=self.uploaded_file_id
             )
             
             # Wait for file to be processed
-            max_wait_time = 60  # Maximum wait time in seconds
+            # Increased timeout for large files (5000-10,000 pages)
+            max_wait_time = 600  # Maximum wait time in seconds (10 minutes)
             wait_time = 0
+            logger.info(f"Waiting for vector store processing (max {max_wait_time}s for large files)")
             while wait_time < max_wait_time:
                 vector_store_files = client.vector_stores.files.list(
                     vector_store_id=self.vector_store_id
@@ -342,10 +374,10 @@ class PDFProcessor:
                     assistant_id=self.assistant_id
                 )
                 
-                # Wait for completion with shorter intervals
-                max_wait_time = 60  # Reduced from 120 to 60 seconds
+                # Wait for completion with adaptive intervals for large files
+                max_wait_time = 600  # Increased to 10 minutes for large files (5000-10,000 pages)
                 wait_time = 0
-                check_interval = 1  # Check every 1 second instead of 2
+                check_interval = 2  # Check every 2 seconds to reduce API calls
                 
                 while wait_time < max_wait_time:
                     run_status = client.beta.threads.runs.retrieve(
@@ -868,33 +900,51 @@ def upload_pdf():
     try:
         if 'pdf' not in request.files:
             return jsonify({'error': 'No PDF file provided'}), 400
-        
+
         pdf_file = request.files['pdf']
         if pdf_file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
-        
+
+        # Check file size and log for large files
+        pdf_file.seek(0, 2)  # Seek to end
+        file_size = pdf_file.tell()
+        pdf_file.seek(0)  # Reset to beginning
+        file_size_mb = file_size / (1024 * 1024)
+
+        logger.info(f"Receiving PDF upload: {pdf_file.filename} ({file_size_mb:.2f} MB)")
+
+        # Warn if file is very large
+        if file_size_mb > 500:
+            logger.warning(f"Large file upload detected: {file_size_mb:.2f} MB - may take several minutes to process")
+
         # Get user-specific processor
         processor = get_user_processor()
-        
+
         # Set verbosity if provided
         verbosity = request.form.get('verbosity', 'detailed')
         processor.verbosity = verbosity
-        
+
         # Upload PDF to OpenAI and create vector store (with local fallback inside)
+        logger.info(f"Starting PDF extraction and upload to OpenAI for user {session.get('user_id', 'unknown')}")
         success = processor.extract_pdf_text(pdf_file)
         if not success:
             return jsonify({'error': 'Failed to handle PDF upload'}), 400
-        
+
+        logger.info(f"PDF upload completed successfully for {pdf_file.filename}")
         return jsonify({
             'message': 'PDF ready (OpenAI or local OCR mode)',
             'vector_store_id': processor.vector_store_id,
             'assistant_id': processor.assistant_id,
             'local_mode': bool(getattr(processor, 'local_pdf_path', None)),
+            'file_size_mb': round(file_size_mb, 2),
             'user_id': session.get('user_id', 'unknown')
         })
-    
+
     except Exception as e:
         logger.error(f"Upload error: {str(e)}")
+        # Check if it's a file size error
+        if 'MAX_CONTENT_LENGTH' in str(e) or 'too large' in str(e).lower():
+            return jsonify({'error': f'File too large. Maximum size is {app.config["MAX_CONTENT_LENGTH"] / (1024*1024*1024):.1f}GB'}), 413
         return jsonify({'error': str(e)}), 500
 
 @app.route('/process', methods=['POST'])

@@ -1561,6 +1561,14 @@
             async uploadPDF() {
                 if (!this.currentFile) return;
 
+                // Check file size and warn user for large files
+                const fileSizeMB = (this.currentFile.size / (1024 * 1024)).toFixed(2);
+                const isLargeFile = this.currentFile.size > 100 * 1024 * 1024; // > 100MB
+
+                if (isLargeFile) {
+                    this.showAlert(`Uploading large file (${fileSizeMB} MB). This may take several minutes. Please be patient...`, 'warning');
+                }
+
                 this.updateStatus('Uploading PDF...', 'processing');
                 this.showProgress(20);
 
@@ -1569,10 +1577,35 @@
                 formData.append('verbosity', this.verbosity.value);
 
                 try {
+                    // Create an AbortController for timeout handling
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minute timeout for large files
+
+                    // Simulate progress updates for large files
+                    let progressInterval;
+                    if (isLargeFile) {
+                        let currentProgress = 20;
+                        progressInterval = setInterval(() => {
+                            if (currentProgress < 80) {
+                                currentProgress += 5;
+                                this.showProgress(currentProgress);
+                                if (currentProgress === 40) {
+                                    this.updateStatus('Uploading to server...', 'processing');
+                                } else if (currentProgress === 60) {
+                                    this.updateStatus('Processing with OpenAI...', 'processing');
+                                }
+                            }
+                        }, 2000);
+                    }
+
                     const response = await fetch('/upload', {
                         method: 'POST',
-                        body: formData
+                        body: formData,
+                        signal: controller.signal
                     });
+
+                    clearTimeout(timeoutId);
+                    if (progressInterval) clearInterval(progressInterval);
 
                     const result = await response.json();
 
@@ -1584,8 +1617,11 @@
                         this.cleanupBtn.disabled = false;
                         this.hasServerPDF = true;
                         this.serverFileName = this.currentFile ? this.currentFile.name : this.serverFileName;
-                        this.showAlert('PDF uploaded to OpenAI File Search successfully!', 'success');
-                        
+
+                        // Show appropriate success message based on file size
+                        const sizeInfo = result.file_size_mb ? ` (${result.file_size_mb} MB)` : '';
+                        this.showAlert(`PDF uploaded to OpenAI File Search successfully!${sizeInfo}`, 'success');
+
                         // Show vector store info
                         if (result.vector_store_id) {
                             this.showAlert(`Vector Store ID: ${result.vector_store_id}`, 'info');
@@ -1600,7 +1636,11 @@
                     }
                 } catch (error) {
                     this.updateStatus('Upload failed', 'error');
-                    this.showAlert('Error: ' + error.message, 'danger');
+                    if (error.name === 'AbortError') {
+                        this.showAlert('Upload timeout: The file is too large or the connection is too slow. Please try again or use a smaller file.', 'danger');
+                    } else {
+                        this.showAlert('Error: ' + error.message, 'danger');
+                    }
                 } finally {
                     setTimeout(() => this.hideProgress(), 2000);
                 }
