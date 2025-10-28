@@ -1901,8 +1901,8 @@
                         return;
                     }
 
-                    // Step 2: Process with current prompts
-                    this.updateOverlay('Processing with your prompts...');
+                    // Step 2: Process with current prompts (non-blocking - allow editing prompts)
+                    this.hideOverlay();
                     await this.ensurePromptsLoaded();
                     response = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompts: this.currentPrompts }) });
                     const processResult = await response.json();
@@ -1914,7 +1914,7 @@
                     this.updateStatus('Processing complete', 'complete');
 
                     // Step 3: Generate report and download
-                    this.updateOverlay('Generating report...');
+                    this.showOverlay('Generating report...');
                     response = await fetch('/generate-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ results: this.lastResults }) });
                     if (!response.ok) {
                         const genErr = await response.json();
@@ -2786,7 +2786,7 @@
                 try {
                     await this.checkServerStatus(false);
                     if (!this.hasServerPDF) { this.showAlert('Upload a PDF first.', 'warning'); return; }
-                    this.showOverlay('Running with your prompts...');
+                    // Non-blocking run: do not show global overlay so prompts remain editable
                     const response = await fetch('/api/run', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -2809,7 +2809,7 @@
                 } catch (e) {
                     this.showAlert('Error: ' + e.message, 'danger');
                 } finally {
-                    this.hideOverlay();
+                    // no overlay to hide here
                 }
             }
 
@@ -2835,7 +2835,7 @@
                     }
                     
                     if (!prompt || !prompt.trim()) { this.showAlert('Prompt is empty.', 'warning'); return; }
-                    this.showOverlay('Running prompt...');
+                    // Non-blocking run: do not show global overlay so prompts remain editable
                     this.showLoadingInOutput();
                     const response = await fetch('/api/run-one', {
                         method: 'POST',
@@ -2849,7 +2849,6 @@
                     this.showAlert('Error: ' + e.message, 'danger');
                     this.hideLoadingInOutput();
                 } finally {
-                    this.hideOverlay();
                     this.hideLoadingInOutput();
                 }
             }
@@ -2874,7 +2873,7 @@
                     }
                     
                     if (!template || !variableName) { this.showAlert('Template or variable missing.', 'warning'); return; }
-                    this.showOverlay('Running prompt...');
+                    // Non-blocking run: do not show global overlay so prompts remain editable
                     this.showLoadingInOutput();
                     await this.ensurePromptsLoaded();
                     const response = await fetch('/api/run-one', {
@@ -2889,7 +2888,6 @@
                     this.showAlert('Error: ' + e.message, 'danger');
                     this.hideLoadingInOutput();
                 } finally {
-                    this.hideOverlay();
                     this.hideLoadingInOutput();
                 }
             }
