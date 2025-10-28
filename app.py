@@ -4,6 +4,7 @@ import logging
 import secrets
 import uuid
 from flask import Flask, request, jsonify, render_template, send_file, session
+from werkzeug.utils import secure_filename
 from flask_cors import CORS
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -30,6 +31,9 @@ CORS(app)
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
 app.config['MAX_CONTENT_PATH'] = None
+
+# Persistent uploads directory (per-user history)
+UPLOADS_ROOT = os.path.join(os.getcwd(), 'uploads')
 
 # Configure session management for user isolation
 app.secret_key = os.getenv('SECRET_KEY', secrets.token_hex(16))
@@ -71,6 +75,14 @@ def cleanup_user_processor(user_id):
         finally:
             del user_processors[user_id]
             logger.info(f"Removed processor for user: {user_id}")
+
+def _get_user_upload_dir() -> str:
+    """Return absolute path to the current user's uploads directory, creating it if needed."""
+    if 'user_id' not in session:
+        session['user_id'] = str(uuid.uuid4())
+    user_dir = os.path.join(UPLOADS_ROOT, session['user_id'])
+    os.makedirs(user_dir, exist_ok=True)
+    return user_dir
 
 class PDFProcessor:
     def __init__(self):
@@ -917,27 +929,60 @@ def upload_pdf():
         if file_size_mb > 500:
             logger.warning(f"Large file upload detected: {file_size_mb:.2f} MB - may take several minutes to process")
 
-        # Get user-specific processor
+        # Get user-specific processor and ensure user history dir exists
         processor = get_user_processor()
+        user_dir = _get_user_upload_dir()
 
         # Set verbosity if provided
         verbosity = request.form.get('verbosity', 'detailed')
         processor.verbosity = verbosity
 
+        # Persist a copy into user's history before processing
+        safe_name = secure_filename(pdf_file.filename or 'document.pdf') or 'document.pdf'
+        history_id = uuid.uuid4().hex[:12]
+        saved_basename = f"{history_id}__{safe_name}"
+        saved_path = os.path.join(user_dir, saved_basename)
+        try:
+            with open(saved_path, 'wb') as out_f:
+                pdf_file.stream.seek(0)
+                chunk = pdf_file.stream.read(8 * 1024 * 1024)
+                while chunk:
+                    out_f.write(chunk)
+                    chunk = pdf_file.stream.read(8 * 1024 * 1024)
+        except Exception as e:
+            logger.error(f"Failed to persist upload into history: {e}")
+            saved_path = None
+
         # Upload PDF to OpenAI and create vector store (with local fallback inside)
         logger.info(f"Starting PDF extraction and upload to OpenAI for user {session.get('user_id', 'unknown')}")
-        success = processor.extract_pdf_text(pdf_file)
+        try:
+            if saved_path and os.path.exists(saved_path):
+                with open(saved_path, 'rb') as persisted_file:
+                    success = processor.extract_pdf_text(persisted_file)
+            else:
+                pdf_file.stream.seek(0)
+                success = processor.extract_pdf_text(pdf_file)
+        except Exception:
+            pdf_file.stream.seek(0)
+            success = processor.extract_pdf_text(pdf_file)
         if not success:
             return jsonify({'error': 'Failed to handle PDF upload'}), 400
 
         logger.info(f"PDF upload completed successfully for {pdf_file.filename}")
+        # Ensure a friendly file name is tracked server-side
+        try:
+            processor.file_name = pdf_file.filename
+        except Exception:
+            pass
         return jsonify({
             'message': 'PDF ready (OpenAI or local OCR mode)',
             'vector_store_id': processor.vector_store_id,
             'assistant_id': processor.assistant_id,
             'local_mode': bool(getattr(processor, 'local_pdf_path', None)),
             'file_size_mb': round(file_size_mb, 2),
-            'user_id': session.get('user_id', 'unknown')
+            'user_id': session.get('user_id', 'unknown'),
+            'file_name': pdf_file.filename,
+            'history_id': history_id
         })
 
     except Exception as e:
@@ -945,6 +990,90 @@ def upload_pdf():
         # Check if it's a file size error
         if 'MAX_CONTENT_LENGTH' in str(e) or 'too large' in str(e).lower():
             return jsonify({'error': f'File too large. Maximum size is {app.config["MAX_CONTENT_LENGTH"] / (1024*1024*1024):.1f}GB'}), 413
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/files/history', methods=['GET'])
+def list_file_history():
+    """List previously uploaded files for the current user (server-side history)."""
+    try:
+        user_dir = _get_user_upload_dir()
+        items = []
+        if os.path.exists(user_dir):
+            for name in os.listdir(user_dir):
+                if not name.lower().endswith('.pdf'):
+                    continue
+                if '__' not in name:
+                    continue
+                fid, original = name.split('__', 1)
+                path = os.path.join(user_dir, name)
+                try:
+                    st = os.stat(path)
+                    items.append({
+                        'id': fid,
+                        'name': original,
+                        'size_mb': round(st.st_size / (1024 * 1024), 2),
+                        'created': datetime.fromtimestamp(st.st_ctime).strftime('%Y-%m-%d %H:%M:%S')
+                    })
+                except Exception:
+                    continue
+        items.sort(key=lambda x: x.get('created', ''), reverse=True)
+        return jsonify({'files': items})
+    except Exception as e:
+        logger.error(f"History list error: {e}")
+        return jsonify({'error': 'Failed to list history'}), 500
+
+@app.route('/api/files/use', methods=['POST'])
+def use_file_from_history():
+    """Load a file from the user's server-side history and set it as the active document."""
+    try:
+        data = request.get_json(silent=True) or {}
+        fid = str(data.get('id') or '').strip()
+        if not fid:
+            return jsonify({'error': 'Missing id'}), 400
+
+        user_dir = _get_user_upload_dir()
+        target_path = None
+        original_name = None
+        for name in os.listdir(user_dir):
+            if name.startswith(fid + '__') and name.lower().endswith('.pdf'):
+                target_path = os.path.join(user_dir, name)
+                original_name = name.split('__', 1)[1]
+                break
+        if not target_path or not os.path.exists(target_path):
+            return jsonify({'error': 'File not found'}), 404
+
+        file_size_mb = round(os.stat(target_path).st_size / (1024 * 1024), 2)
+
+        # Reset any previous processor resources, then (re)load this file
+        user_id = session.get('user_id')
+        if user_id:
+            try:
+                cleanup_user_processor(user_id)
+            except Exception:
+                pass
+        processor = get_user_processor()
+
+        logger.info(f"Loading history file for user {session.get('user_id', 'unknown')}: {original_name}")
+        with open(target_path, 'rb') as f:
+            success = processor.extract_pdf_text(f)
+        if not success:
+            return jsonify({'error': 'Failed to load file from history'}), 400
+
+        # Prefer displaying the original filename to the client
+        processor.file_name = original_name
+
+        return jsonify({
+            'message': 'PDF loaded from history',
+            'vector_store_id': processor.vector_store_id,
+            'assistant_id': processor.assistant_id,
+            'local_mode': bool(getattr(processor, 'local_pdf_path', None)),
+            'file_size_mb': file_size_mb,
+            'user_id': session.get('user_id', 'unknown'),
+            'file_name': original_name,
+            'history_id': fid
+        })
+    except Exception as e:
+        logger.error(f"Use history error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/process', methods=['POST'])

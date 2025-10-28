@@ -1113,6 +1113,22 @@
                             <input type="file" id="pdfFile" accept=".pdf" class="d-none">
                         </div>
 
+                        <!-- Reuse From History -->
+                        <div class="mb-4" id="historyContainer">
+                            <div class="input-group">
+                                <button class="btn btn-outline-secondary" id="listHistoryBtn">
+                                    <i class="fas fa-history me-1"></i>Browse History
+                                </button>
+                                <select class="form-select" id="historySelect" aria-label="History files" disabled>
+                                    <option value="">No history loaded</option>
+                                </select>
+                                <button class="btn btn-primary" id="useHistoryBtn" disabled>
+                                    <i class="fas fa-check me-1"></i>Use Selected
+                                </button>
+                            </div>
+                            <div class="small text-muted mt-1">Re-use previously uploaded PDFs without re-uploading.</div>
+                        </div>
+
                         <!-- Progress Bar -->
                         <div class="progress mb-4" id="progressContainer" style="display: none;">
                             <div class="progress-bar progress-bar-striped progress-bar-animated" 
@@ -1313,6 +1329,10 @@
                 this.generateBtn = document.getElementById('generateBtn');
                 this.cleanupBtn = document.getElementById('cleanupBtn');
                 this.startBtn = document.getElementById('startBtn');
+                // History elements
+                this.historySelect = document.getElementById('historySelect');
+                this.listHistoryBtn = document.getElementById('listHistoryBtn');
+                this.useHistoryBtn = document.getElementById('useHistoryBtn');
                 this.statusBadge = document.getElementById('statusBadge');
                 this.progressContainer = document.getElementById('progressContainer');
                 this.progressBar = document.getElementById('progressBar');
@@ -1378,6 +1398,15 @@
                 this.generateBtn.addEventListener('click', this.generateReport.bind(this));
                 this.cleanupBtn.addEventListener('click', this.cleanup.bind(this));
                 this.startBtn.addEventListener('click', this.startProcessingFlow.bind(this));
+
+                // History actions
+                if (this.listHistoryBtn) this.listHistoryBtn.addEventListener('click', this.loadHistory.bind(this));
+                if (this.useHistoryBtn) this.useHistoryBtn.addEventListener('click', this.useSelectedHistory.bind(this));
+                if (this.historySelect && this.useHistoryBtn) {
+                    this.historySelect.addEventListener('change', () => {
+                        this.useHistoryBtn.disabled = !this.historySelect.value;
+                    });
+                }
 
                 // OCR navigation
                 if (this.ocrPrev && this.ocrNext && this.ocrPageInput) {
@@ -1517,6 +1546,11 @@
                     this.serverFileName = s.file_name || this.serverFileName;
                     this.chatThreadId = s.chat_thread_id || this.chatThreadId || null;
                     this.updateChatThreadInfo();
+                    // Enable history browse
+                    if (this.historySelect && this.useHistoryBtn) {
+                        this.historySelect.disabled = false;
+                        this.useHistoryBtn.disabled = !this.historySelect.value;
+                    }
                     if (initializeUI && this.hasServerPDF) {
                         this.processBtn.disabled = false;
                         this.generateBtn.disabled = false;
@@ -1539,6 +1573,73 @@
                         this.startBtn.disabled = !(this.hasServerPDF || this.currentFile);
                         this.uploadBtn.disabled = !this.currentFile;
                     }
+                }
+            }
+
+            async loadHistory() {
+                try {
+                    const res = await fetch('/api/files/history');
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Failed to load history');
+                    const files = Array.isArray(data.files) ? data.files : [];
+                    if (this.historySelect) {
+                        this.historySelect.innerHTML = '';
+                        if (files.length === 0) {
+                            const opt = document.createElement('option');
+                            opt.value = '';
+                            opt.textContent = 'No history files found';
+                            this.historySelect.appendChild(opt);
+                            this.historySelect.disabled = true;
+                            this.useHistoryBtn.disabled = true;
+                        } else {
+                            const placeholder = document.createElement('option');
+                            placeholder.value = '';
+                            placeholder.textContent = 'Select a previous file…';
+                            this.historySelect.appendChild(placeholder);
+                            for (const f of files) {
+                                const opt = document.createElement('option');
+                                opt.value = f.id;
+                                opt.textContent = `${f.name} (${f.size_mb} MB)`;
+                                this.historySelect.appendChild(opt);
+                            }
+                            this.historySelect.disabled = false;
+                            this.useHistoryBtn.disabled = true;
+                        }
+                    }
+                } catch (e) {
+                    this.showAlert('History error: ' + e.message, 'warning');
+                }
+            }
+
+            async useSelectedHistory() {
+                try {
+                    const id = this.historySelect && this.historySelect.value;
+                    if (!id) return;
+                    this.updateStatus('Loading from history…', 'processing');
+                    const res = await fetch('/api/files/use', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Failed to use history');
+                    this.hasServerPDF = true;
+                    this.serverFileName = data.file_name || this.serverFileName;
+                    this.processBtn.disabled = false;
+                    this.generateBtn.disabled = false;
+                    this.cleanupBtn.disabled = false;
+                    this.startBtn.disabled = false;
+                    this.uploadArea.innerHTML = `
+                        <i class="fas fa-file-pdf fa-3x text-success mb-3"></i>
+                        <h5>${this.escape(this.serverFileName || 'Selected PDF')}</h5>
+                        <p class="text-muted">Selected from history</p>
+                    `;
+                    this.updateStatus('Ready: using ' + (this.serverFileName || 'history PDF'), 'idle');
+                    await this.initOCRPreview();
+                    this.showAlert('Loaded file from history successfully!', 'success');
+                } catch (e) {
+                    this.updateStatus('History load failed', 'error');
+                    this.showAlert('Error: ' + e.message, 'danger');
                 }
             }
 
