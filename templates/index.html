@@ -345,6 +345,23 @@
                             <input type="file" id="pdfFile" accept=".pdf" class="d-none">
                         </div>
 
+                        <!-- Reuse From History -->
+                        <div class="mb-4" id="historyContainer">
+                            <div class="d-flex gap-2 mb-2">
+                                <button class="btn btn-outline-secondary" id="listHistoryBtn">
+                                    <i class="fas fa-history me-1"></i>Browse History
+                                </button>
+                            </div>
+                            <select class="form-select" id="historySelect" aria-label="History files" disabled>
+                                <option value="">No history loaded</option>
+                            </select>
+                            <div class="mt-2">
+                                <button class="btn btn-primary" id="useHistoryBtn" disabled>
+                                    <i class="fas fa-check me-1"></i>Use Selected File
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- Progress Bar -->
                         <div class="progress mb-4" id="progressContainer" style="display: none;">
                             <div class="progress-bar progress-bar-striped progress-bar-animated" 
@@ -571,6 +588,10 @@
                 this.chatSend = document.getElementById('chatSend');
                 this.chatReset = document.getElementById('chatReset');
                 this.chatThreadInfo = document.getElementById('chatThreadInfo');
+                // History elements
+                this.listHistoryBtn = document.getElementById('listHistoryBtn');
+                this.historySelect = document.getElementById('historySelect');
+                this.useHistoryBtn = document.getElementById('useHistoryBtn');
             }
 
             setupEventListeners() {
@@ -634,6 +655,19 @@
                 }
                 if (this.chatReset) {
                     this.chatReset.addEventListener('click', () => this.resetChat());
+                }
+
+                // History handlers
+                if (this.listHistoryBtn) {
+                    this.listHistoryBtn.addEventListener('click', () => this.listHistory());
+                }
+                if (this.historySelect) {
+                    this.historySelect.addEventListener('change', () => {
+                        this.useHistoryBtn.disabled = !this.historySelect.value;
+                    });
+                }
+                if (this.useHistoryBtn) {
+                    this.useHistoryBtn.addEventListener('click', () => this.useHistoryFile());
                 }
             }
 
@@ -861,6 +895,74 @@
                 this.chatThreadId = null;
                 this.updateChatThreadInfo();
                 if (this.chatMessages) this.chatMessages.innerHTML = '';
+            }
+
+            async listHistory() {
+                try {
+                    this.listHistoryBtn.disabled = true;
+                    const response = await fetch(`${this.apiBaseUrl || ''}/api/files/history`);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch history');
+                    }
+                    const data = await response.json();
+                    const files = data.files || [];
+                    
+                    // Clear and populate select
+                    this.historySelect.innerHTML = '<option value="">No history loaded</option>';
+                    if (files.length === 0) {
+                        this.historySelect.innerHTML = '<option value="">No files in history</option>';
+                        this.historySelect.disabled = true;
+                        this.showAlert('No files found in history', 'info');
+                    } else {
+                        files.forEach(file => {
+                            const option = document.createElement('option');
+                            option.value = file.id;
+                            option.textContent = `${file.name} (${file.size_mb} MB, ${file.created})`;
+                            this.historySelect.appendChild(option);
+                        });
+                        this.historySelect.disabled = false;
+                        this.showAlert(`Loaded ${files.length} file(s) from history`, 'success');
+                    }
+                } catch (error) {
+                    this.showAlert('Failed to load history: ' + error.message, 'danger');
+                } finally {
+                    this.listHistoryBtn.disabled = false;
+                }
+            }
+
+            async useHistoryFile() {
+                const fileId = this.historySelect.value;
+                if (!fileId) {
+                    this.showAlert('Please select a file from history', 'warning');
+                    return;
+                }
+                
+                try {
+                    this.useHistoryBtn.disabled = true;
+                    this.showAlert('Loading file from history...', 'info');
+                    
+                    const response = await fetch(`${this.apiBaseUrl || ''}/api/files/use`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: fileId })
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.error || 'Failed to load file');
+                    }
+                    
+                    const data = await response.json();
+                    this.showAlert(`Loaded "${data.file_name}" from history`, 'success');
+                    
+                    // Update status and enable buttons
+                    await this.checkServerStatus(false);
+                    this.startBtn.disabled = false;
+                } catch (error) {
+                    this.showAlert('Failed to load file from history: ' + error.message, 'danger');
+                } finally {
+                    this.useHistoryBtn.disabled = false;
+                }
             }
 
             async startProcessingFlow() {
