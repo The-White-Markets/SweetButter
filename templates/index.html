@@ -58,13 +58,26 @@
             font-weight: 600;
         }
         .progress {
-            height: 8px;
+            height: 24px;
             border-radius: 10px;
             background-color: rgba(0,0,0,0.1);
+            position: relative;
         }
         .progress-bar {
             background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
             border-radius: 10px;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 24px;
+        }
+        .progress-text {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #fff;
+            white-space: nowrap;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
         }
         .file-upload-area {
             border: 2px dashed #667eea;
@@ -370,7 +383,9 @@
                         <!-- Progress Bar -->
                         <div class="progress mb-4" id="progressContainer" style="display: none;">
                             <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                                 role="progressbar" id="progressBar" style="width: 0%"></div>
+                                 role="progressbar" id="progressBar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                                <span id="progressText" class="progress-text"></span>
+                            </div>
                         </div>
 
                         <!-- One-Click Start -->
@@ -558,6 +573,7 @@
                 this.statusBadge = document.getElementById('statusBadge');
                 this.progressContainer = document.getElementById('progressContainer');
                 this.progressBar = document.getElementById('progressBar');
+                this.progressText = document.getElementById('progressText');
                 this.alertContainer = document.getElementById('alertContainer');
                 this.resultsContainer = document.getElementById('resultsContainer');
                 this.variablesDisplay = document.getElementById('variablesDisplay');
@@ -781,7 +797,7 @@
                 if (!this.currentFile) return;
 
                 this.updateStatus('Uploading PDF...', 'processing');
-                this.showProgress(20);
+                this.showProgress(0);
 
                 const formData = new FormData();
                 formData.append('pdf', this.currentFile);
@@ -793,51 +809,40 @@
                 const additionalTimeout = Math.max(0, (fileSizeMB - 10) * 5000); // 5 seconds per MB over 10MB
                 const timeout = Math.min(baseTimeout + additionalTimeout, 600000); // Cap at 10 minutes
 
-                // Create an AbortController for timeout handling
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), timeout);
-
                 try {
-                    const response = await fetch('/upload', {
-                        method: 'POST',
-                        body: formData,
-                        signal: controller.signal
+                    const result = await this.uploadWithProgress('/upload', formData, timeout, (progress) => {
+                        // Update progress bar with actual upload progress
+                        // Reserve 5% for initial connection, 90% for upload, 5% for server processing
+                        const uploadProgress = Math.min(95, 5 + (progress * 0.9));
+                        this.showProgress(uploadProgress);
                     });
 
-                    clearTimeout(timeoutId);
-
-                    const result = await response.json();
-
-                    if (response.ok) {
-                        this.showProgress(100);
-                        this.updateStatus('PDF uploaded successfully', 'complete');
-                        this.processBtn.disabled = false;
-                        this.generateBtn.disabled = false;
-                        this.cleanupBtn.disabled = false;
-                        this.hasServerPDF = true;
-                        this.serverFileName = this.currentFile ? this.currentFile.name : this.serverFileName;
-                        
-                        if (fileSizeMB > 100) {
-                            this.showAlert(`Large PDF uploaded successfully! (${fileSizeMB.toFixed(1)} MB) Processing may take a few minutes.`, 'success');
-                        } else {
-                            this.showAlert('PDF uploaded to OpenAI File Search successfully!', 'success');
-                        }
-                        
-                        // Show vector store info
-                        if (result.vector_store_id) {
-                            this.showAlert(`Vector Store ID: ${result.vector_store_id}`, 'info');
-                        }
-                        this.ensurePromptsLoaded();
-                        // Refresh status to pick up assistant/thread ids
-                        await this.checkServerStatus(false);
+                    // Show 100% when complete
+                    this.showProgress(100);
+                    this.updateStatus('PDF uploaded successfully', 'complete');
+                    this.processBtn.disabled = false;
+                    this.generateBtn.disabled = false;
+                    this.cleanupBtn.disabled = false;
+                    this.hasServerPDF = true;
+                    this.serverFileName = this.currentFile ? this.currentFile.name : this.serverFileName;
+                    
+                    if (fileSizeMB > 100) {
+                        this.showAlert(`Large PDF uploaded successfully! (${fileSizeMB.toFixed(1)} MB) Processing may take a few minutes.`, 'success');
                     } else {
-                        throw new Error(result.error || 'Upload failed');
+                        this.showAlert('PDF uploaded to OpenAI File Search successfully!', 'success');
                     }
+                    
+                    // Show vector store info
+                    if (result.vector_store_id) {
+                        this.showAlert(`Vector Store ID: ${result.vector_store_id}`, 'info');
+                    }
+                    this.ensurePromptsLoaded();
+                    // Refresh status to pick up assistant/thread ids
+                    await this.checkServerStatus(false);
                 } catch (error) {
-                    clearTimeout(timeoutId);
                     this.updateStatus('Upload failed', 'error');
                     
-                    if (error.name === 'AbortError') {
+                    if (error.name === 'TimeoutError' || error.message.includes('timeout')) {
                         this.showAlert(`Upload timed out. Large files (${fileSizeMB.toFixed(1)} MB) may take longer to process. Please try again or use a smaller file.`, 'danger');
                     } else {
                         this.showAlert('Error: ' + error.message, 'danger');
@@ -845,6 +850,65 @@
                 } finally {
                     setTimeout(() => this.hideProgress(), 2000);
                 }
+            }
+
+            // Helper function to upload with progress tracking
+            uploadWithProgress(url, formData, timeout, onProgress) {
+                return new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    let timeoutId;
+
+                    // Track upload progress
+                    xhr.upload.addEventListener('progress', (e) => {
+                        if (e.lengthComputable) {
+                            const percentComplete = (e.loaded / e.total) * 100;
+                            if (onProgress) {
+                                onProgress(percentComplete);
+                            }
+                        }
+                    });
+
+                    // Handle completion
+                    xhr.addEventListener('load', () => {
+                        clearTimeout(timeoutId);
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            try {
+                                const result = JSON.parse(xhr.responseText);
+                                resolve(result);
+                            } catch (e) {
+                                reject(new Error('Invalid JSON response'));
+                            }
+                        } else {
+                            try {
+                                const error = JSON.parse(xhr.responseText);
+                                reject(new Error(error.error || `Upload failed with status ${xhr.status}`));
+                            } catch (e) {
+                                reject(new Error(`Upload failed with status ${xhr.status}`));
+                            }
+                        }
+                    });
+
+                    // Handle errors
+                    xhr.addEventListener('error', () => {
+                        clearTimeout(timeoutId);
+                        reject(new Error('Network error during upload'));
+                    });
+
+                    xhr.addEventListener('abort', () => {
+                        clearTimeout(timeoutId);
+                        reject(new Error('Upload was aborted'));
+                    });
+
+                    // Set timeout
+                    timeoutId = setTimeout(() => {
+                        xhr.abort();
+                        reject(new Error('Upload timed out'));
+                    }, timeout);
+
+                    // Start upload
+                    xhr.open('POST', url);
+                    xhr.send(formData);
+                });
             }
 
             // --- Chat UI Logic ---
@@ -1008,6 +1072,7 @@
                     // Step 1: Upload only if no server PDF is present
                     if (this.currentFile && !this.hasServerPDF) {
                         this.showOverlay('Uploading PDF...');
+                        this.showProgress(0);
                         const formData = new FormData();
                         formData.append('pdf', this.currentFile);
                         formData.append('verbosity', this.verbosity.value);
@@ -1018,30 +1083,23 @@
                         const additionalTimeout = Math.max(0, (fileSizeMB - 10) * 5000); // 5 seconds per MB over 10MB
                         const timeout = Math.min(baseTimeout + additionalTimeout, 600000); // Cap at 10 minutes
                         
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), timeout);
-                        
                         try {
-                            response = await fetch('/upload', { 
-                                method: 'POST', 
-                                body: formData,
-                                signal: controller.signal
+                            const result = await this.uploadWithProgress('/upload', formData, timeout, (progress) => {
+                                // Update progress bar with actual upload progress
+                                // Reserve 5% for initial connection, 90% for upload, 5% for server processing
+                                const uploadProgress = Math.min(95, 5 + (progress * 0.9));
+                                this.showProgress(uploadProgress);
                             });
-                            clearTimeout(timeoutId);
+                            this.showProgress(100);
+                            this.hasServerPDF = true;
+                            this.updateStatus('PDF uploaded successfully', 'complete');
+                            response = { ok: true, json: () => Promise.resolve(result) };
                         } catch (error) {
-                            clearTimeout(timeoutId);
-                            if (error.name === 'AbortError') {
+                            if (error.message.includes('timeout')) {
                                 throw new Error(`Upload timed out. Large files (${fileSizeMB.toFixed(1)} MB) may take longer to process.`);
                             }
                             throw error;
                         }
-                        
-                        if (!response.ok) {
-                            const err = await response.json();
-                            throw new Error(err.error || 'Upload failed');
-                        }
-                        this.hasServerPDF = true;
-                        this.updateStatus('PDF uploaded successfully', 'complete');
                     } else if (!this.hasServerPDF) {
                         this.showAlert('Please upload a PDF first.', 'warning');
                         return;
@@ -1378,12 +1436,21 @@
 
             showProgress(percent) {
                 this.progressContainer.style.display = 'block';
-                this.progressBar.style.width = percent + '%';
+                const percentRounded = Math.round(percent);
+                this.progressBar.style.width = percentRounded + '%';
+                this.progressBar.setAttribute('aria-valuenow', percentRounded);
+                if (this.progressText) {
+                    this.progressText.textContent = percentRounded + '%';
+                }
             }
 
             hideProgress() {
                 this.progressContainer.style.display = 'none';
                 this.progressBar.style.width = '0%';
+                this.progressBar.setAttribute('aria-valuenow', 0);
+                if (this.progressText) {
+                    this.progressText.textContent = '';
+                }
             }
 
             showAlert(message, type) {
