@@ -155,6 +155,9 @@ class PDFProcessor:
                             temp_file.write(chunk)
                     else:
                         temp_file.write(pdf_file.read())
+            except Exception as e:
+                logger.error(f"Error creating temporary file: {e}")
+                raise
             
             # Upload file to OpenAI with progress logging
             logger.info(f"Uploading file to OpenAI (size: {file_size_mb:.2f} MB)...")
