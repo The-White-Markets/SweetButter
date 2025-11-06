@@ -53,9 +53,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client with longer timeout for large file uploads
+# Use a very long timeout for large files (up to 30 minutes for very large files)
 client = OpenAI(
     api_key=os.getenv('OPENAI_API_KEY'),
-    timeout=600.0  # 10 minutes timeout for large file operations
+    timeout=1800.0  # 30 minutes timeout for very large file operations
 )
 
 # User processor management for session isolation
@@ -126,6 +127,7 @@ class PDFProcessor:
 
     def extract_pdf_text(self, pdf_file, file_size_bytes=None):
         """Upload PDF to OpenAI and create vector store"""
+        file_size_mb = 0  # Initialize for error handling
         try:
             # Reset file pointer to beginning
             pdf_file.seek(0)
@@ -161,11 +163,46 @@ class PDFProcessor:
             
             # Upload file to OpenAI with progress logging
             logger.info(f"Uploading file to OpenAI (size: {file_size_mb:.2f} MB)...")
-            with open(temp_file_path, 'rb') as file:
-                uploaded_file = client.files.create(
-                    file=file,
-                    purpose='assistants'
-                )
+            
+            # Adjust timeout based on file size for very large files
+            # OpenAI API uploads can take a long time for large files
+            max_retries = 3
+            retry_delay = 5  # seconds
+            uploaded_file = None
+            
+            for attempt in range(max_retries):
+                try:
+                    with open(temp_file_path, 'rb') as file:
+                        # Create a client instance with dynamic timeout for this specific upload
+                        # For files over 100MB, use longer timeout
+                        upload_timeout = 1800.0 if file_size_mb > 100 else 600.0
+                        upload_client = OpenAI(
+                            api_key=os.getenv('OPENAI_API_KEY'),
+                            timeout=upload_timeout
+                        )
+                        uploaded_file = upload_client.files.create(
+                            file=file,
+                            purpose='assistants'
+                        )
+                    break  # Success, exit retry loop
+                except Exception as upload_error:
+                    error_str = str(upload_error)
+                    # Check if it's a timeout or gateway error
+                    is_timeout = any(keyword in error_str.lower() for keyword in [
+                        'timeout', 'gateway', '504', 'timed out'
+                    ])
+                    
+                    if is_timeout and attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                        logger.warning(f"Upload attempt {attempt + 1} timed out. Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        # Last attempt failed or non-timeout error
+                        raise
+            
+            if not uploaded_file:
+                raise Exception("Failed to upload file after multiple attempts")
             
             self.uploaded_file_id = uploaded_file.id
             self.file_name = getattr(pdf_file, 'filename', None) or getattr(pdf_file, 'name', None)
@@ -267,7 +304,15 @@ class PDFProcessor:
             return True
             
         except Exception as e:
-            logger.error(f"Error uploading PDF to OpenAI: {str(e)}")
+            error_str = str(e)
+            logger.error(f"Error uploading PDF to OpenAI: {error_str}")
+            
+            # Provide user-friendly error messages for common issues
+            if any(keyword in error_str.lower() for keyword in ['timeout', 'gateway', '504', 'timed out']):
+                logger.error("Upload timed out - file may be too large or network connection slow")
+                # Don't return False here - let the outer handler provide a better message
+                raise Exception(f"Upload timed out. Large files ({file_size_mb:.1f} MB) may take longer to process. Please try again or split the file into smaller parts.")
+            
             # Clean up temporary file in case of error
             if 'temp_file_path' in locals() and temp_file_path and os.path.exists(temp_file_path):
                 try:
