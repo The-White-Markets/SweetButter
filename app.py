@@ -52,8 +52,11 @@ def _make_session_permanent():
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+# Initialize OpenAI client with longer timeout for large file uploads
+client = OpenAI(
+    api_key=os.getenv('OPENAI_API_KEY'),
+    timeout=600.0  # 10 minutes timeout for large file operations
+)
 
 # User processor management for session isolation
 user_processors = {}
@@ -102,6 +105,7 @@ class PDFProcessor:
         self.file_name = None
         self._pages_cache = {}
         self.chat_thread_id = None
+        self._cache_size_limit = 100 * 1024 * 1024  # 100MB max cache size
         
     def _strip_inline_markers(self, text: str) -> str:
         """Remove inline source markers like [4:5†source] or 【source】 from text."""
@@ -120,18 +124,40 @@ class PDFProcessor:
         t = re.sub(r"[^a-z0-9 ]+", "", t)
         return t
 
-    def extract_pdf_text(self, pdf_file):
+    def extract_pdf_text(self, pdf_file, file_size_bytes=None):
         """Upload PDF to OpenAI and create vector store"""
         try:
             # Reset file pointer to beginning
             pdf_file.seek(0)
             
-            # Create a temporary file to save the uploaded PDF
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
-                temp_file.write(pdf_file.read())
-                temp_file_path = temp_file.name
+            # Get file size if not provided
+            if file_size_bytes is None:
+                pdf_file.seek(0, 2)  # Seek to end
+                file_size_bytes = pdf_file.tell()
+                pdf_file.seek(0)  # Reset to beginning
             
-            # Upload file to OpenAI
+            file_size_mb = file_size_bytes / (1024 * 1024)
+            logger.info(f"Processing file: {file_size_mb:.2f} MB")
+            
+            # Create a temporary file to save the uploaded PDF using chunked reading for large files
+            temp_file_path = None
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
+                    temp_file_path = temp_file.name
+                    # Use chunked reading for files larger than 100MB
+                    chunk_size = 10 * 1024 * 1024  # 10MB chunks
+                    if file_size_bytes > 100 * 1024 * 1024:
+                        logger.info("Using chunked reading for large file")
+                        while True:
+                            chunk = pdf_file.read(chunk_size)
+                            if not chunk:
+                                break
+                            temp_file.write(chunk)
+                    else:
+                        temp_file.write(pdf_file.read())
+            
+            # Upload file to OpenAI with progress logging
+            logger.info(f"Uploading file to OpenAI (size: {file_size_mb:.2f} MB)...")
             with open(temp_file_path, 'rb') as file:
                 uploaded_file = client.files.create(
                     file=file,
@@ -150,25 +176,62 @@ class PDFProcessor:
             logger.info(f"Vector store created: {self.vector_store_id}")
             
             # Add file to vector store
+            logger.info("Adding file to vector store...")
             client.vector_stores.files.create(
                 vector_store_id=self.vector_store_id,
                 file_id=self.uploaded_file_id
             )
             
-            # Wait for file to be processed
-            max_wait_time = 60  # Maximum wait time in seconds
+            # Calculate wait time based on file size (allow more time for larger files)
+            # Base time: 60 seconds, add 2 seconds per MB for files over 100MB
+            base_wait_time = 60
+            additional_time = max(0, (file_size_mb - 100) * 2) if file_size_mb > 100 else 0
+            max_wait_time = int(base_wait_time + additional_time)
+            max_wait_time = min(max_wait_time, 1800)  # Cap at 30 minutes
+            
+            logger.info(f"Waiting for vector store processing (max {max_wait_time}s)...")
             wait_time = 0
+            check_interval = 5  # Check every 5 seconds
+            last_status = None
+            
             while wait_time < max_wait_time:
-                vector_store_files = client.vector_stores.files.list(
-                    vector_store_id=self.vector_store_id
-                )
-                
-                if vector_store_files.data and vector_store_files.data[0].status == 'completed':
-                    logger.info("File processing completed")
-                    break
-                
-                time.sleep(2)
-                wait_time += 2
+                try:
+                    vector_store_files = client.vector_stores.files.list(
+                        vector_store_id=self.vector_store_id
+                    )
+                    
+                    if vector_store_files.data:
+                        current_status = vector_store_files.data[0].status
+                        if current_status != last_status:
+                            logger.info(f"Vector store file status: {current_status}")
+                            last_status = current_status
+                        
+                        if current_status == 'completed':
+                            logger.info("File processing completed")
+                            break
+                        elif current_status == 'failed':
+                            logger.error("Vector store processing failed")
+                            raise Exception("Vector store processing failed")
+                    else:
+                        if last_status != 'processing':
+                            logger.info("Vector store processing...")
+                            last_status = 'processing'
+                    
+                    time.sleep(check_interval)
+                    wait_time += check_interval
+                    
+                    # Log progress every 30 seconds
+                    if wait_time % 30 == 0:
+                        logger.info(f"Still processing... ({wait_time}s / {max_wait_time}s)")
+                except Exception as e:
+                    logger.error(f"Error checking vector store status: {e}")
+                    time.sleep(check_interval)
+                    wait_time += check_interval
+            
+            if wait_time >= max_wait_time:
+                logger.warning(f"Vector store processing timed out after {max_wait_time}s")
+                # Don't fail immediately - processing might still complete in background
+                # But log a warning
                 
             # Create assistant with file search capability
             self.assistant_id = self.create_assistant()
@@ -183,13 +246,31 @@ class PDFProcessor:
                     pass
                 return False
             
-            # Clean up temporary file
-            os.unlink(temp_file_path)
+            # Clean up temporary file immediately after upload to free memory
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                    temp_file_path = None
+                    logger.info("Temporary file cleaned up")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temp file: {e}")
+            
+            # Force garbage collection after large file operations
+            if file_size_mb > 100:
+                import gc
+                gc.collect()
+                logger.info("Garbage collection triggered after large file upload")
             
             return True
             
         except Exception as e:
             logger.error(f"Error uploading PDF to OpenAI: {str(e)}")
+            # Clean up temporary file in case of error
+            if 'temp_file_path' in locals() and temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except:
+                    pass
             return False
     
     def create_assistant(self):
@@ -240,25 +321,80 @@ class PDFProcessor:
             return None
 
     def _get_file_pages(self, file_id):
-        """Download an uploaded file and return its per-page text for citation lookup."""
+        """Download an uploaded file and return its per-page text for citation lookup.
+        Uses temporary file to avoid loading entire PDF into memory."""
+        temp_file_path = None
         try:
+            # Check if we have a cached version (but limit cache size for memory)
+            if hasattr(self, "_pages_cache") and file_id in self._pages_cache:
+                cached_pages = self._pages_cache[file_id]
+                # Only use cache if it's reasonable size (less than 50MB of text)
+                total_size = sum(len(str(p)) for p in cached_pages)
+                if total_size < 50 * 1024 * 1024:  # 50MB limit
+                    return cached_pages
+            
+            # Download file to temporary disk file instead of memory
             stream = client.files.content(file_id)
-            data = stream.read()
-            doc = fitz.open(stream=data, filetype="pdf")
-            pages = [doc[i].get_text() for i in range(doc.page_count)]
+            temp_file_path = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf').name
+            
+            # Write stream to disk in chunks to avoid memory issues
+            chunk_size = 8 * 1024 * 1024  # 8MB chunks
+            with open(temp_file_path, 'wb') as f:
+                while True:
+                    chunk = stream.read(chunk_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+            
+            # Open PDF from disk file
+            doc = fitz.open(temp_file_path)
+            pages = []
+            
+            # Process pages one at a time and only keep text (not full page objects)
+            for i in range(doc.page_count):
+                page_text = doc[i].get_text()
+                pages.append(page_text)
+                
+                # Don't cache if file is too large (more than 1000 pages or estimated > 100MB)
+                if len(pages) > 1000:
+                    logger.warning(f"File has {doc.page_count} pages, skipping cache to save memory")
+                    doc.close()
+                    # Clean up temp file
+                    if temp_file_path and os.path.exists(temp_file_path):
+                        os.unlink(temp_file_path)
+                    return pages  # Return what we have without caching
+            
             doc.close()
+            
+            # Clean up temp file immediately
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+                temp_file_path = None
+            
+            # Only cache if reasonable size
+            total_size = sum(len(str(p)) for p in pages)
+            if total_size < 50 * 1024 * 1024:  # 50MB limit
+                if not hasattr(self, "_pages_cache"):
+                    self._pages_cache = {}
+                self._pages_cache[file_id] = pages
+            else:
+                logger.info(f"File too large to cache ({total_size / (1024*1024):.1f}MB), skipping cache")
+            
             return pages
+            
         except Exception as e:
             logger.error(f"Failed to download/parse file {file_id} for citations: {e}")
+            # Clean up temp file on error
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except:
+                    pass
+            
             # Fallback: try the originally uploaded file (same content, different id than vector store file)
             try:
                 if getattr(self, 'uploaded_file_id', None) and self.uploaded_file_id != file_id:
-                    stream = client.files.content(self.uploaded_file_id)
-                    data = stream.read()
-                    doc = fitz.open(stream=data, filetype="pdf")
-                    pages = [doc[i].get_text() for i in range(doc.page_count)]
-                    doc.close()
-                    return pages
+                    return self._get_file_pages(self.uploaded_file_id)
             except Exception as e2:
                 logger.error(f"Fallback download failed for citations: {e2}")
             return []
@@ -269,6 +405,35 @@ class PDFProcessor:
             return []
         if not hasattr(self, "_pages_cache"):
             self._pages_cache = {}
+        
+        # For very large files, don't cache - process on demand
+        if file_id not in self._pages_cache:
+            # Check if we should skip caching (if file is large)
+            try:
+                # Get file info to check size
+                file_info = client.files.retrieve(file_id)
+                file_size_bytes = getattr(file_info, 'bytes', 0)
+                if file_size_bytes > 100 * 1024 * 1024:  # 100MB
+                    logger.info(f"Large file detected ({file_size_bytes / (1024*1024):.1f}MB), processing without cache")
+                    pages = self._get_file_pages(file_id)
+                    # Don't cache it, just use it
+                    if pages:
+                        q = self._strip_inline_markers(quote)
+                        qn = re.sub(r"\s+", " ", q).strip()
+                        qn_norm = self._normalize_for_match(qn)
+                        hits = []
+                        for i, txt in enumerate(pages):
+                            tn = re.sub(r"\s+", " ", (txt or ""))
+                            if qn and qn in tn:
+                                hits.append(i + 1)
+                                continue
+                            tn_norm = self._normalize_for_match(tn)
+                            if qn_norm and qn_norm in tn_norm:
+                                hits.append(i + 1)
+                        return hits
+            except Exception:
+                pass  # Fall through to normal caching behavior
+        
         # Strip inline source markers like [4:5†source] or 【source】 before searching
         q = self._strip_inline_markers(quote)
         if file_id not in self._pages_cache:
@@ -467,6 +632,12 @@ class PDFProcessor:
             pages = self._get_file_pages(self.uploaded_file_id)
             if not pages:
                 return []
+            
+            # Limit pages processed for very large files to save memory
+            max_pages_to_check = 500  # Don't check more than 500 pages
+            if len(pages) > max_pages_to_check:
+                logger.info(f"File has {len(pages)} pages, limiting citation inference to first {max_pages_to_check} pages")
+                pages = pages[:max_pages_to_check]
 
             # Prepare sentences and keywords
             raw = str(text)
@@ -816,7 +987,12 @@ class PDFProcessor:
             self.uploaded_file_id = None
             self.file_name = None
             self.variables = {}
+            # Clear pages cache to free memory
             self._pages_cache = {}
+            
+            # Force garbage collection to free memory
+            import gc
+            gc.collect()
 
 # Note: Global processor removed - now using session-based processors
 
@@ -884,16 +1060,21 @@ def upload_pdf():
         logger.info(f"Starting PDF extraction and upload to OpenAI for user {session.get('user_id', 'unknown')}")
         try:
             if saved_path and os.path.exists(saved_path):
+                file_size = os.path.getsize(saved_path)
                 with open(saved_path, 'rb') as persisted_file:
-                    success = processor.extract_pdf_text(persisted_file)
+                    success = processor.extract_pdf_text(persisted_file, file_size_bytes=file_size)
             else:
                 pdf_file.stream.seek(0)
-                success = processor.extract_pdf_text(pdf_file)
+                success = processor.extract_pdf_text(pdf_file, file_size_bytes=file_size)
         except Exception:
             pdf_file.stream.seek(0)
-            success = processor.extract_pdf_text(pdf_file)
+            success = processor.extract_pdf_text(pdf_file, file_size_bytes=file_size)
         if not success:
-            return jsonify({'error': 'Failed to handle PDF upload'}), 400
+            error_msg = 'Failed to handle PDF upload'
+            # Check if it's a timeout issue
+            if file_size_mb > 500:
+                error_msg += f'. Large files ({file_size_mb:.1f} MB) may take longer to process. Please try again or contact support if the issue persists.'
+            return jsonify({'error': error_msg}), 400
 
         logger.info(f"PDF upload completed successfully for {pdf_file.filename}")
         # Ensure a friendly file name is tracked server-side
@@ -914,10 +1095,21 @@ def upload_pdf():
 
     except Exception as e:
         logger.error(f"Upload error: {str(e)}")
+        error_message = str(e)
+        
         # Check if it's a file size error
-        if 'MAX_CONTENT_LENGTH' in str(e) or 'too large' in str(e).lower():
+        if 'MAX_CONTENT_LENGTH' in error_message or 'too large' in error_message.lower():
             return jsonify({'error': f'File too large. Maximum size is {app.config["MAX_CONTENT_LENGTH"] / (1024*1024*1024):.1f}GB'}), 413
-        return jsonify({'error': str(e)}), 500
+        
+        # Check if it's a timeout error
+        if 'timeout' in error_message.lower() or 'timed out' in error_message.lower():
+            return jsonify({'error': 'Upload timed out. Large files may take longer to process. Please try again.'}), 504
+        
+        # Check if it's a connection error
+        if 'connection' in error_message.lower() or 'network' in error_message.lower():
+            return jsonify({'error': 'Network error during upload. Please check your connection and try again.'}), 503
+        
+        return jsonify({'error': f'Upload failed: {error_message}'}), 500
 
 @app.route('/api/files/history', methods=['GET'])
 def list_file_history():
@@ -981,8 +1173,9 @@ def use_file_from_history():
         processor = get_user_processor()
 
         logger.info(f"Loading history file for user {session.get('user_id', 'unknown')}: {original_name}")
+        file_size = os.path.getsize(target_path)
         with open(target_path, 'rb') as f:
-            success = processor.extract_pdf_text(f)
+            success = processor.extract_pdf_text(f, file_size_bytes=file_size)
         if not success:
             return jsonify({'error': 'Failed to load file from history'}), 400
 

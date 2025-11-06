@@ -787,11 +787,24 @@
                 formData.append('pdf', this.currentFile);
                 formData.append('verbosity', this.verbosity.value);
 
+                // Calculate timeout based on file size (allow more time for larger files)
+                const fileSizeMB = this.currentFile.size / (1024 * 1024);
+                const baseTimeout = 60000; // 1 minute base
+                const additionalTimeout = Math.max(0, (fileSizeMB - 10) * 5000); // 5 seconds per MB over 10MB
+                const timeout = Math.min(baseTimeout + additionalTimeout, 600000); // Cap at 10 minutes
+
+                // Create an AbortController for timeout handling
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeout);
+
                 try {
                     const response = await fetch('/upload', {
                         method: 'POST',
-                        body: formData
+                        body: formData,
+                        signal: controller.signal
                     });
+
+                    clearTimeout(timeoutId);
 
                     const result = await response.json();
 
@@ -803,7 +816,12 @@
                         this.cleanupBtn.disabled = false;
                         this.hasServerPDF = true;
                         this.serverFileName = this.currentFile ? this.currentFile.name : this.serverFileName;
-                        this.showAlert('PDF uploaded to OpenAI File Search successfully!', 'success');
+                        
+                        if (fileSizeMB > 100) {
+                            this.showAlert(`Large PDF uploaded successfully! (${fileSizeMB.toFixed(1)} MB) Processing may take a few minutes.`, 'success');
+                        } else {
+                            this.showAlert('PDF uploaded to OpenAI File Search successfully!', 'success');
+                        }
                         
                         // Show vector store info
                         if (result.vector_store_id) {
@@ -816,8 +834,14 @@
                         throw new Error(result.error || 'Upload failed');
                     }
                 } catch (error) {
+                    clearTimeout(timeoutId);
                     this.updateStatus('Upload failed', 'error');
-                    this.showAlert('Error: ' + error.message, 'danger');
+                    
+                    if (error.name === 'AbortError') {
+                        this.showAlert(`Upload timed out. Large files (${fileSizeMB.toFixed(1)} MB) may take longer to process. Please try again or use a smaller file.`, 'danger');
+                    } else {
+                        this.showAlert('Error: ' + error.message, 'danger');
+                    }
                 } finally {
                     setTimeout(() => this.hideProgress(), 2000);
                 }
@@ -987,7 +1011,31 @@
                         const formData = new FormData();
                         formData.append('pdf', this.currentFile);
                         formData.append('verbosity', this.verbosity.value);
-                        response = await fetch('/upload', { method: 'POST', body: formData });
+                        
+                        // Calculate timeout based on file size
+                        const fileSizeMB = this.currentFile.size / (1024 * 1024);
+                        const baseTimeout = 60000; // 1 minute base
+                        const additionalTimeout = Math.max(0, (fileSizeMB - 10) * 5000); // 5 seconds per MB over 10MB
+                        const timeout = Math.min(baseTimeout + additionalTimeout, 600000); // Cap at 10 minutes
+                        
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), timeout);
+                        
+                        try {
+                            response = await fetch('/upload', { 
+                                method: 'POST', 
+                                body: formData,
+                                signal: controller.signal
+                            });
+                            clearTimeout(timeoutId);
+                        } catch (error) {
+                            clearTimeout(timeoutId);
+                            if (error.name === 'AbortError') {
+                                throw new Error(`Upload timed out. Large files (${fileSizeMB.toFixed(1)} MB) may take longer to process.`);
+                            }
+                            throw error;
+                        }
+                        
                         if (!response.ok) {
                             const err = await response.json();
                             throw new Error(err.error || 'Upload failed');
